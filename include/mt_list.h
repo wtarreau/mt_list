@@ -171,6 +171,17 @@ struct mt_list {
  */
 static inline long mt_list_cpu_relax(void)
 {
+#if defined(__x86_64__)
+	/* This is a PAUSE instruction on x86_64 */
+	asm volatile("rep;nop\n");
+#elif defined(__aarch64__)
+	/* This was shown to improve fairness on modern ARMv8
+	 * such as Cortex A72 or Neoverse N1.
+	 */
+	asm volatile("isb");
+#else
+	/* Generic implementation */
+#endif
 	return 1;
 }
 

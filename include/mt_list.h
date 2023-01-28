@@ -164,6 +164,27 @@ struct mt_list {
 #define MT_LIST_CONNECT_ELEM(el, ends)  (mt_list_connect_elem(el, ends))
 
 
+/* This is a Xorshift-based thread-local PRNG aimed at reducing the risk of
+ * resonance between competing threads during exponential back-off. Threads
+ * quickly become out of sync and use completely different values.
+ */
+static __thread unsigned int _prng_state = 0xEDCBA987;
+static inline unsigned int mt_list_prng()
+{
+        unsigned int x = _prng_state;
+
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        return _prng_state = x;
+}
+
+static inline unsigned int mt_list_wait(unsigned factor)
+{
+	//return ((uint64_t)factor * mt_list_prng() + factor) >> 32;
+	return mt_list_prng() & factor;
+}
+
 /* This function relaxes the CPU during contention. It is meant to be
  * architecture-specific and may even be OS-specific, and always exists in a
  * generic version. It should return a non-null integer value that can be used
@@ -173,6 +194,7 @@ struct mt_list {
 static inline __attribute__((always_inline)) unsigned long mt_list_cpu_relax(unsigned long loop)
 {
 	/* limit maximum wait time for unlucky threads */
+	loop = mt_list_wait(loop);
 
 	for (loop &= 0x7fffff; loop >= 32; loop--) {
 #if defined(__x86_64__)

@@ -40,6 +40,24 @@
 #define MT_INLINE inline
 #endif
 
+/* A list element, it's both a head or any element. Both pointers always point
+ * to a valid list element (possibly itself for a detached element or an empty
+ * list head), or are equal to MT_LIST_BUSY for a locked pointer indicating
+ * that the target element is about to be modified.
+ */
+struct mt_list {
+	struct mt_list *next;
+	struct mt_list *prev;
+};
+
+
+/* This is the value of the locked list pointer. It is assigned to an mt_list's
+ * ->next or ->prev pointer to lock the link to the other element while this
+ * element is being inspected or modified.
+ */
+#define MT_LIST_BUSY ((struct mt_list *)1)
+
+
 /* This is used to prevent the compiler from knowing the origin of the
  * variable, and sometimes avoid being confused about possible null-derefs
  * that it sometimes believes are possible after pointer casts.

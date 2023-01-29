@@ -57,6 +57,41 @@ struct mt_list {
  */
 #define MT_LIST_BUSY ((struct mt_list *)1)
 
+/* This is used to pre-initialize an mt_list element during its declaration.
+ * The argument is the name of the variable being declared and being assigned
+ * this value. Example:
+ *
+ *   struct mt_list pool_head = MT_LIST_HEAD_INIT(pool_head);
+ */
+#define MT_LIST_HEAD_INIT(l) { .next = &l, .prev = &l }
+
+
+/* Returns a pointer of type <t> to the structure containing a member of type
+ * mt_list called <m> that is accessible at address <a>. Note that <a> may be
+ * the result of a function or macro since it's used only once. Example:
+ *
+ *   return MT_LIST_ELEM(cur_node->args.next, struct node *, args)
+ */
+#define MT_LIST_ELEM(a, t, m) ((t)(((const char *)(a)) - ((size_t)&((t)NULL)->m)))
+
+
+/* Returns a pointer of type <t> to a structure following the element which
+ * contains the list element at address <a>, which is known as member <m> in
+ * struct t*. Example:
+ *
+ *   return MT_LIST_NEXT(args, struct node *, list);
+ */
+#define MT_LIST_NEXT(a, t, m) (MT_LIST_ELEM((a)->next, t, m))
+
+
+/* Returns a pointer of type <t> to a structure preceeding the element which
+ * contains the list element at address <a>, which is known as member <m> in
+ * struct t*. Example:
+ *
+ *   return MT_LIST_PREV(args, struct node *, list);
+ */
+#define MT_LIST_PREV(a, t, m) (MT_LIST_ELEM((a)->prev, t, m))
+
 
 /* This is used to prevent the compiler from knowing the origin of the
  * variable, and sometimes avoid being confused about possible null-derefs

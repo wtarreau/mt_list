@@ -113,6 +113,37 @@ struct mt_list {
 		(_n ? MT_LIST_ELEM(_n, t, m) : NULL);			\
 	})
 
+/* Iterates <item> through a list of items of type "typeof(*item)" which are
+ * linked via a "struct mt_list" member named <member>. A pointer to the head
+ * of the list is passed in <list_head>.
+ *
+ * <back> is a temporary struct mt_list, used internally to store the current
+ * element's ends while it is locked.
+ *
+ * This macro is implemented using two nested loops, each defined as a separate
+ * macro for easier inspection. The inner loop will run for each element in the
+ * list, and the outer loop will run only once to do some cleanup when the end
+ * of the list is reached or user breaks from inner loop. It's safe to break
+ * from this macro as the cleanup will be performed anyway, but it is strictly
+ * forbidden to branch (goto or return) from the loop because skipping the
+ * cleanup will lead to undefined behavior.
+ *
+ * The current element is detached from the list while being visited, with its
+ * extremities locked, and re-attached when switching to the next item. As such
+ * in order to delete the current item, it's sufficient to set it to NULL to
+ * prevent the inner loop from attaching it back. In this case it's recommended
+ * to re-init the item before reusing it in order to clear the locks.
+ *
+ * Example:
+ *   MT_LIST_FOR_EACH_ENTRY_SAFE(item, list_head, list_member, back) {
+ *     ...
+ *   }
+ */
+#define MT_LIST_FOR_EACH_ENTRY_SAFE(item, list_head, member, back) 		\
+	_MT_LIST_FOR_EACH_ENTRY_OUTER(item, list_head, member, back)	\
+		_MT_LIST_FOR_EACH_ENTRY_INNER(item, list_head, member, back)
+
+
 /* The macros below directly map to their function equivalent. They are
  * provided for ease of use. Please refer to the equivalent functions
  * for their decription.
@@ -775,5 +806,179 @@ static inline struct mt_list mt_list_connect_elem(struct mt_list *el, struct mt_
 	if (__builtin_expect(ends.prev != el, 1))
 		ends.prev->next = el;
 }
+
+
+/*****************************************************************************
+ * The macros and functions below are only used by the iterators. These must *
+ * not be used for other purposes!                                           *
+ *****************************************************************************/
+
+
+/* Unlocks element <el> from the backup copy of previous next pointer <back>.
+ * It supports the special case where the list was empty and the element locked
+ * while looping over itself (we don't need/want to overwrite ->prev in this
+ * case).
+ */
+static inline void _mt_list_unlock_next(struct mt_list *el, struct mt_list *back)
+{
+	el->next = back;
+	__atomic_thread_fence(__ATOMIC_RELEASE);
+
+	if (back != el)
+		back->prev = el;
+}
+
+
+/* Unlocks element <el> from the backup copy of previous prev pointer <back>.
+ * <back> cannot be equal to <el> here because if the list is empty, the list's
+ * head is not locked for prev and the caller has NULL in back.prev, thus does
+ * not call this function.
+ */
+static inline void _mt_list_unlock_prev(struct mt_list *el, struct mt_list *back)
+{
+	el->prev = back;
+	__atomic_thread_fence(__ATOMIC_RELEASE);
+
+	back->next = el;
+}
+
+
+/* Locks the link designated by element <el>'s next pointer and returns its
+ * previous value. If the element does not loop over itself (empty list head),
+ * its reciprocal prev pointer is locked as well. This check is necessary
+ * because we don't want to lock the head twice.
+ */
+static MT_INLINE struct mt_list *_mt_list_lock_next(struct mt_list *el)
+{
+	struct mt_list *n, *n2;
+
+	for (;; mt_list_cpu_relax()) {
+		if (__atomic_load_n(&el->next, __ATOMIC_RELAXED) == MT_LIST_BUSY)
+			continue;
+		n = __atomic_exchange_n(&el->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (n == MT_LIST_BUSY)
+			continue;
+
+		if (n != el) {
+			n2 = __atomic_exchange_n(&n->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
+			if (n2 == MT_LIST_BUSY) {
+				el->next = n;
+				__atomic_thread_fence(__ATOMIC_RELEASE);
+				continue;
+			}
+		}
+		break;
+	}
+	return n;
+}
+
+
+/* Locks the link designated by element <el>'s prev pointer and returns its
+ * previous value. The element cannot loop over itself because the caller will
+ * only lock the prev pointer on an non-empty list.
+ */
+static MT_INLINE struct mt_list *_mt_list_lock_prev(struct mt_list *el)
+{
+	struct mt_list *p, *p2;
+
+	for (;; mt_list_cpu_relax()) {
+		if (__atomic_load_n(&el->prev, __ATOMIC_RELAXED) == MT_LIST_BUSY)
+			continue;
+		p = __atomic_exchange_n(&el->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (p == MT_LIST_BUSY)
+			continue;
+
+		p2 = __atomic_exchange_n(&p->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (p2 == MT_LIST_BUSY) {
+			el->prev = p;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+			continue;
+		}
+		break;
+	}
+	return p;
+}
+
+
+/* Outer loop of MT_LIST_FOR_EACH_ENTRY_SAFE(). Do not use directly!
+ * This loop is only used to unlock the last item after the end of the inner
+ * loop is reached or if we break out of it.
+ *
+ * Trick: item starts with the impossible and unused value MT_LIST_BUSY that is
+ * detected as the looping condition to force to enter the loop. The inner loop
+ * will first replace it, making the compiler notice that this condition cannot
+ * happen after the first iteration, and making it implement exactly one round
+ * and no more.
+ */
+#define _MT_LIST_FOR_EACH_ENTRY_OUTER(item, lh, lm, back)			\
+	for (/* init-expr: preset for one iteration */				\
+	     (back).prev = NULL,						\
+	     (back).next = _mt_list_lock_next(lh),				\
+	     (item) = (void*)MT_LIST_BUSY;					\
+	     /* condition-expr: only one iteration */				\
+	     (void*)(item) == (void*)MT_LIST_BUSY;				\
+	     /* loop-expr */							\
+	     ({									\
+		/* post loop cleanup:						\
+		 * gets executed only once to perform cleanup			\
+		 * after child loop has finished, or a break happened		\
+		 */								\
+		if (item != NULL) {						\
+			/* last visited item still exists or is the list's head	\
+			 * so we have to unlock it. back.prev may be null if 	\
+			 * the list is empty and the inner loop did not run.	\
+			 */							\
+			if (back.prev)						\
+				_mt_list_unlock_prev(&item->lm, back.prev);	\
+			_mt_list_unlock_next(&item->lm, back.next);		\
+		} else {							\
+			/* last item was deleted by user, relink is required:	\
+			 * prev->next = next					\
+			 * next->prev = prev					\
+			 * Note that gcc may believe that back.prev may be null \
+			 * which is not possible by construction.		\
+			 */							\
+			MT_ALREADY_CHECKED(back.prev);				\
+			mt_list_reconnect(back);				\
+		}								\
+	     })									\
+	)
+
+
+/* Inner loop of MT_LIST_FOR_EACH_ENTRY_SAFE(). Do not use directly!
+ * This loop iterates over all list elements and unlocks the previously visited
+ * element. It stops when reaching the list's head, without unlocking the last
+ * element, which is left to the outer loop to deal with, just like when hitting
+ * a break. In order to preserve the locking, the loop takes care of always
+ * locking the next element before unlocking the previous one. During the first
+ * iteration, the prev element might be NULL since the head is singly-locked.
+ */
+#define _MT_LIST_FOR_EACH_ENTRY_INNER(item, lh, lm, back)			\
+	for (/* init-expr */							\
+	     item = MT_LIST_ELEM(lh, typeof(item), lm);				\
+	     /* cond-expr (thus executed before the body of the loop) */	\
+	     (back.next != lh) && ({						\
+		struct mt_list *__tmp_next = back.next;				\
+		/* did not reach end of list yet */				\
+		back.next = _mt_list_lock_next(back.next);			\
+		if (item != NULL) {						\
+			/* previous item was not deleted, we must unlock it */	\
+			if (back.prev) {					\
+				/* not executed on first run			\
+				 * (back.prev == NULL on first run)		\
+				 */						\
+				_mt_list_unlock_prev(&item->lm, back.prev);	\
+				/* unlock_prev will implicitly relink:		\
+				 * item->lm.prev = prev				\
+				 * prev->next = &item->lm			\
+				 */						\
+			}							\
+			back.prev = &item->lm;					\
+		}								\
+		(item) = MT_LIST_ELEM(__tmp_next, typeof(item), lm);		\
+		1; /* end of list not reached, we must execute */       	\
+	     });								\
+	     /* empty loop-expr */						\
+	)
 
 #endif /* _MT_LIST_H */

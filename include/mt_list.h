@@ -99,6 +99,16 @@ struct mt_list {
  */
 #define MT_ALREADY_CHECKED(p) do { asm("" : "=rm"(p) : "0"(p)); } while (0)
 
+
+/* The macros below directly map to their function equivalent. They are
+ * provided for ease of use. Please refer to the equivalent functions
+ * for their decription.
+ */
+#define MT_LIST_INIT(e)                 (mt_list_init(e))
+#define MT_LIST_ISEMPTY(e)              (mt_list_isempty(e))
+#define MT_LIST_INLIST(e)               (mt_list_inlist(e))
+
+
 /* This function relaxes the CPU during contention. It is meant to be
  * architecture-specific and may even be OS-specific, and always exists in a
  * generic version. It should return a non-null integer value that can be used
@@ -108,5 +118,35 @@ static inline long mt_list_cpu_relax(void)
 {
 	return 1;
 }
+
+
+/* Initialize list element <el>. It will point to itself, matching a list head
+ * or a detached list element. The list element is returned.
+ */
+static inline struct mt_list *mt_list_init(struct mt_list *el)
+{
+	el->next = el->prev = el;
+	return el;
+}
+
+
+/* Returns true if the list element <e> corresponds to an empty list head or a
+ * detached element, false otherwise. Only the <next> member is checked.
+ */
+static inline long mt_list_isempty(const struct mt_list *el)
+{
+	return el->next == el;
+}
+
+
+/* Returns true if the list element <e> corresponds to a non-empty list head or
+ * to an element that is part of a list, false otherwise. Only the <next> member
+ * is checked.
+ */
+static inline long mt_list_inlist(const struct mt_list *el)
+{
+	return el->next != el;
+}
+
 
 #endif /* _MT_LIST_H */

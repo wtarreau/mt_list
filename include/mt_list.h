@@ -100,6 +100,19 @@ struct mt_list {
 #define MT_ALREADY_CHECKED(p) do { asm("" : "=rm"(p) : "0"(p)); } while (0)
 
 
+/* Returns a pointer of type <t> to the structure containing a member of type
+ * mt_list called <m> that comes from the first element in list <l>, that is
+ * atomically detached. If the list is empty, NULL is returned instead.
+ * Example:
+ *
+ *   while ((conn = MT_LIST_POP(queue, struct conn *, list))) ...
+ */
+#define MT_LIST_POP(lh, t, m)						\
+	({								\
+		struct mt_list *_n = mt_list_pop(lh);			\
+		(_n ? MT_LIST_ELEM(_n, t, m) : NULL);			\
+	})
+
 /* The macros below directly map to their function equivalent. They are
  * provided for ease of use. Please refer to the equivalent functions
  * for their decription.
@@ -107,6 +120,17 @@ struct mt_list {
 #define MT_LIST_INIT(e)                 (mt_list_init(e))
 #define MT_LIST_ISEMPTY(e)              (mt_list_isempty(e))
 #define MT_LIST_INLIST(e)               (mt_list_inlist(e))
+#define MT_LIST_TRY_INSERT(l, e)        (mt_list_try_insert(l, e))
+#define MT_LIST_TRY_APPEND(l, e)        (mt_list_try_append(l, e))
+#define MT_LIST_BEHEAD(l)               (mt_list_behead(l))
+#define MT_LIST_INSERT(l, e)            (mt_list_insert(l, e))
+#define MT_LIST_APPEND(l, e)            (mt_list_append(l, e))
+#define MT_LIST_DELETE(e)               (mt_list_delete(e))
+#define MT_LIST_CUT_AFTER(el)           (mt_list_cut_after(el))
+#define MT_LIST_CUT_BEFORE(el)          (mt_list_cut_before(el))
+#define MT_LIST_CUT_AROUND(el)          (mt_list_cut_around(el))
+#define MT_LIST_RECONNECT(ends)         (mt_list_reconnect(ends))
+#define MT_LIST_CONNECT_ELEM(el, ends)  (mt_list_connect_elem(el, ends))
 
 
 /* This function relaxes the CPU during contention. It is meant to be
@@ -148,5 +172,608 @@ static inline long mt_list_inlist(const struct mt_list *el)
 	return el->next != el;
 }
 
+
+/* Adds element <el> at the beginning of list <lh>, which means that element
+ * <el> is added immediately after element <lh> (nothing strictly requires that
+ * <lh> is effectively the list's head, any valid element will work). Returns
+ * non-zero if the element was added, otherwise zero (because the element was
+ * already part of a list).
+ */
+static MT_INLINE long mt_list_try_insert(struct mt_list *lh, struct mt_list *el)
+{
+	struct mt_list *n, *n2;
+	struct mt_list *p, *p2;
+        long ret = 0;
+
+	/* Note that the first element checked is the most likely to face
+	 * contention, particularly on the list's head/tail. That's why we
+	 * perform a prior load there: if the element is being modified by
+	 * another thread, requesting a read-only access only leaves the
+	 * other thread's cache line in shared mode, which will impact it
+	 * less than if we attempted a change that would invalidate it.
+	 */
+	for (;; mt_list_cpu_relax()) {
+		if (__atomic_load_n(&lh->next, __ATOMIC_RELAXED) == MT_LIST_BUSY)
+		        continue;
+
+		n = __atomic_exchange_n(&lh->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (n == MT_LIST_BUSY)
+		        continue;
+
+		p = __atomic_exchange_n(&n->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (p == MT_LIST_BUSY) {
+			lh->next = n;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+			continue;
+		}
+
+		n2 = __atomic_exchange_n(&el->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (n2 != el) {
+			/* This element was already attached elsewhere */
+			if (n2 != MT_LIST_BUSY)
+				el->next = n2;
+			n->prev = p;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+
+			lh->next = n;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+
+			if (n2 == MT_LIST_BUSY)
+				continue;
+			break;
+		}
+
+		p2 = __atomic_exchange_n(&el->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (p2 != el) {
+			/* This element was already attached elsewhere */
+			if (p2 != MT_LIST_BUSY)
+				el->prev = p2;
+			n->prev = p;
+			el->next = el;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+
+			lh->next = n;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+
+			if (p2 == MT_LIST_BUSY)
+				continue;
+			break;
+		}
+
+		el->next = n;
+		el->prev = p;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+
+		n->prev = el;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+
+		p->next = el;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+
+		ret = 1;
+		break;
+	}
+	return ret;
+}
+
+
+/* Adds element <el> at the end of list <lh>, which means that element <el> is
+ * added immediately before element <lh> (nothing strictly requires that <lh>
+ * is effectively the list's head, any valid element will work). Returns non-
+ * zero if the element was added, otherwise zero (because the element was
+ * already part of a list).
+ */
+static MT_INLINE long mt_list_try_append(struct mt_list *lh, struct mt_list *el)
+{
+	struct mt_list *n, *n2;
+	struct mt_list *p, *p2;
+	long ret = 0;
+
+	/* Note that the first element checked is the most likely to face
+	 * contention, particularly on the list's head/tail. That's why we
+	 * perform a prior load there: if the element is being modified by
+	 * another thread, requesting a read-only access only leaves the
+	 * other thread's cache line in shared mode, which will impact it
+	 * less than if we attempted a change that would invalidate it.
+	 */
+	for (;; mt_list_cpu_relax()) {
+		if (__atomic_load_n(&lh->prev, __ATOMIC_RELAXED) == MT_LIST_BUSY)
+		        continue;
+
+		p = __atomic_exchange_n(&lh->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (p == MT_LIST_BUSY)
+		        continue;
+
+		n = __atomic_exchange_n(&p->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (n == MT_LIST_BUSY) {
+			lh->prev = p;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+			continue;
+		}
+
+		p2 = __atomic_exchange_n(&el->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (p2 != el) {
+			/* This element was already attached elsewhere */
+			if (p2 != MT_LIST_BUSY)
+				el->prev = p2;
+			p->next = n;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+
+			lh->prev = p;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+
+			if (p2 == MT_LIST_BUSY)
+				continue;
+			break;
+		}
+
+		n2 = __atomic_exchange_n(&el->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (n2 != el) {
+			/* This element was already attached elsewhere */
+			if (n2 != MT_LIST_BUSY)
+				el->next = n2;
+			p->next = n;
+			el->prev = el;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+
+			lh->prev = p;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+
+			if (n2 == MT_LIST_BUSY)
+				continue;
+			break;
+		}
+
+		el->next = n;
+		el->prev = p;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+
+		p->next = el;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+
+		n->prev = el;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+
+		ret = 1;
+		break;
+	}
+	return ret;
+}
+
+
+/* Detaches a list from its head. A pointer to the first element is returned
+ * and the list is closed. If the list was empty, NULL is returned. This may
+ * exclusively be used with lists manipulated using mt_list_try_insert() and
+ * mt_list_try_append(). This is incompatible with mt_list_delete() run
+ * concurrently. If there's at least one element, the next of the last element
+ * will always be NULL.
+ */
+static MT_INLINE struct mt_list *mt_list_behead(struct mt_list *lh)
+{
+	struct mt_list *n;
+	struct mt_list *p;
+
+	for (;; mt_list_cpu_relax()) {
+		p = __atomic_exchange_n(&lh->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (p == MT_LIST_BUSY)
+		        continue;
+		if (p == lh) {
+			lh->prev = p;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+			n = NULL;
+			break;
+		}
+
+		n = __atomic_exchange_n(&lh->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (n == MT_LIST_BUSY) {
+			lh->prev = p;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+			continue;
+		}
+		if (n == lh) {
+			lh->next = n;
+			lh->prev = p;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+			n = NULL;
+			break;
+		}
+
+		lh->next = lh->prev = lh;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+
+		n->prev = p;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+
+		p->next = NULL;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+		break;
+	}
+	return n;
+}
+
+
+/* Adds element <el> at the beginning of list <lh>, which means that element
+ * <el> is added immediately after element <lh> (nothing strictly requires that
+ * <lh> is effectively the list's head, any valid element will work). It is
+ * assumed that the element cannot already be part of a list so it isn't
+ * checked for this.
+ */
+static MT_INLINE void mt_list_insert(struct mt_list *lh, struct mt_list *el)
+{
+	struct mt_list *n;
+	struct mt_list *p;
+
+	for (;; mt_list_cpu_relax()) {
+		n = __atomic_exchange_n(&lh->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (n == MT_LIST_BUSY)
+		        continue;
+
+		p = __atomic_exchange_n(&n->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (p == MT_LIST_BUSY) {
+			lh->next = n;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+			continue;
+		}
+
+		el->next = n;
+		el->prev = p;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+
+		n->prev = el;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+
+		p->next = el;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+		break;
+	}
+}
+
+
+/* Adds element <el> at the end of list <lh>, which means that element <el> is
+ * added immediately after element <lh> (nothing strictly requires that <lh> is
+ * effectively the list's head, any valid element will work). It is assumed
+ * that the element cannot already be part of a list so it isn't checked for
+ * this.
+ */
+static MT_INLINE void mt_list_append(struct mt_list *lh, struct mt_list *el)
+{
+	struct mt_list *n;
+	struct mt_list *p;
+
+	for (;; mt_list_cpu_relax()) {
+		p = __atomic_exchange_n(&lh->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (p == MT_LIST_BUSY)
+		        continue;
+
+		n = __atomic_exchange_n(&p->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (n == MT_LIST_BUSY) {
+			lh->prev = p;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+			continue;
+		}
+
+		el->next = n;
+		el->prev = p;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+
+		p->next = el;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+
+		n->prev = el;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+		break;
+	}
+}
+
+
+/* Removes element <el> from the list it belongs to. The function returns
+ * non-zero if the element could be removed, otherwise zero if the element
+ * could not be removed, because it was already not in a list anymore.
+ */
+static MT_INLINE long mt_list_delete(struct mt_list *el)
+{
+	struct mt_list *n, *n2;
+	struct mt_list *p, *p2;
+	long ret = 0;
+
+	for (;; mt_list_cpu_relax()) {
+		p2 = NULL;
+		n = __atomic_exchange_n(&el->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (n == MT_LIST_BUSY)
+		        continue;
+
+		p = __atomic_exchange_n(&el->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (p == MT_LIST_BUSY) {
+			el->next = n;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+			continue;
+		}
+
+		if (p != el) {
+		        p2 = __atomic_exchange_n(&p->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		        if (p2 == MT_LIST_BUSY) {
+		                el->prev = p;
+				el->next = n;
+				__atomic_thread_fence(__ATOMIC_RELEASE);
+				continue;
+			}
+		}
+
+		if (n != el) {
+		        n2 = __atomic_exchange_n(&n->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
+			if (n2 == MT_LIST_BUSY) {
+				if (p2 != NULL)
+					p->next = p2;
+				el->prev = p;
+				el->next = n;
+				__atomic_thread_fence(__ATOMIC_RELEASE);
+				continue;
+			}
+		}
+
+		n->prev = p;
+		p->next = n;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+
+		el->prev = el->next = el;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+
+		if (p != el && n != el)
+			ret = 1;
+		break;
+	}
+	return ret;
+}
+
+
+/* Removes the first element from the list <lh>, and returns it in detached
+ * form. If the list is already empty, NULL is returned instead.
+ */
+static MT_INLINE struct mt_list *mt_list_pop(struct mt_list *lh)
+{
+	struct mt_list *n, *n2;
+	struct mt_list *p, *p2;
+
+	for (;; mt_list_cpu_relax()) {
+		if (__atomic_load_n(&lh->next, __ATOMIC_RELAXED) == MT_LIST_BUSY)
+		        continue;
+
+		n = __atomic_exchange_n(&lh->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (n == MT_LIST_BUSY)
+			continue;
+
+		if (n == lh) {
+			/* list is empty */
+			lh->next = lh;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+			n = NULL;
+			break;
+		}
+
+		p = __atomic_exchange_n(&n->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (p == MT_LIST_BUSY) {
+			lh->next = n;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+			continue;
+		}
+
+		n2 = __atomic_exchange_n(&n->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (n2 == MT_LIST_BUSY) {
+			n->prev = p;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+
+			lh->next = n;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+			continue;
+		}
+
+		p2 = __atomic_exchange_n(&n2->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (p2 == MT_LIST_BUSY) {
+			n->next = n2;
+			n->prev = p;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+
+			lh->next = n;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+			continue;
+		}
+
+		lh->next = n2;
+		n2->prev = lh;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+
+		n->prev = n->next = n;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+
+		/* return n */
+		break;
+	}
+	return n;
+}
+
+
+/* Opens the list just after <lh> which usually is the list's head, but not
+ * necessarily. The link between <lh> and its next element is cut and replaced
+ * with an MT_LIST_BUSY lock. The ends of the removed link are returned as an
+ * mt_list entry. The operation can be cancelled using mt_list_reconnect() on
+ * the returned value, which will restore the link and unlock the list, or
+ * using mt_list_connect_elem() which will replace the link with another
+ * element and also unlock the list, effectively resulting in inserting that
+ * element after <lh>. Example:
+ *
+ *   struct mt_list *list_insert(struct mt_list *list)
+ *   {
+ *     struct mt_list tmp = mt_list_cut_after(list);
+ *     struct mt_list *el = alloc_element_to_insert();
+ *     if (el)
+ *         mt_list_connect_elem(el, tmp);
+ *     else
+ *         mt_list_reconnect(tmp);
+ *     return el;
+ *   }
+ */
+static MT_INLINE struct mt_list mt_list_cut_after(struct mt_list *lh)
+{
+	struct mt_list el;
+
+	for (;; mt_list_cpu_relax()) {
+		el.next = __atomic_exchange_n(&lh->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (el.next == MT_LIST_BUSY)
+		        continue;
+
+		el.prev = __atomic_exchange_n(&el.next->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (el.prev == MT_LIST_BUSY) {
+			lh->next = el.next;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+			continue;
+		}
+		break;
+	}
+	return el;
+}
+
+
+/* Opens the list just before <lh> which usually is the list's head, but not
+ * necessarily. The link between <lh> and its prev element is cut and replaced
+ * with an MT_LIST_BUSY lock. The ends of the removed link are returned as an
+ * mt_list entry. The operation can be cancelled using mt_list_reconnect() on
+ * the returned value, which will restore the link and unlock the list, or
+ * using mt_list_connect_elem() which will replace the link with another
+ * element and also unlock the list, effectively resulting in inserting that
+ * element before <lh>. Example:
+ *
+ *   struct mt_list *list_append(struct mt_list *list)
+ *   {
+ *     struct mt_list tmp = mt_list_cut_before(list);
+ *     struct mt_list *el = alloc_element_to_insert();
+ *     if (el)
+ *         mt_list_connect_elem(el, tmp);
+ *     else
+ *         mt_list_reconnect(tmp);
+ *     return el;
+ *   }
+ */
+static MT_INLINE struct mt_list mt_list_cut_before(struct mt_list *lh)
+{
+	struct mt_list el;
+
+	for (;; mt_list_cpu_relax()) {
+		el.prev = __atomic_exchange_n(&lh->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (el.prev == MT_LIST_BUSY)
+		        continue;
+
+		el.next = __atomic_exchange_n(&el.prev->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (el.next == MT_LIST_BUSY) {
+			lh->prev = el.prev;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+			continue;
+		}
+		break;
+	}
+	return el;
+}
+
+
+/* Opens the list around element <el>. Both the links between <el> and its prev
+ * element and between <el> and its next element are cut and replaced with an
+ * MT_LIST_BUSY lock. The element itself also has its ends replaced with a
+ * lock, and the ends of the element are returned as an mt_list entry. This
+ * results in the element being detached from the list and both the element and
+ * the list being locked. The operation can be terminated by calling
+ * mt_list_reconnect() on the returned value, which will unlock the list and
+ * effectively result in the removal of the element from the list, or by
+ * calling mt_list_connect_elem() to reinstall the element at its place in the
+ * list, effectively consisting in a temporary lock of this element. Example:
+ *
+ *   struct mt_list *grow_shrink_remove(struct mt_list *el, size_t new_size)
+ *   {
+ *     struct mt_list *tmp = mt_list_cut_around(&node->list);
+ *     struct mt_list *new = new_size ? realloc(el, new_size) : NULL;
+ *     if (new_size) {
+ *         mt_list_connect_elem(new ? new : el, tmp);
+ *     } else {
+ *         free(el);
+ *         mt_list_reconnect(tmp);
+ *     }
+ *     return new;
+ *   }
+ */
+static MT_INLINE struct mt_list mt_list_cut_around(struct mt_list *el)
+{
+	struct mt_list *n2;
+	struct mt_list *p2;
+	struct mt_list ret;
+
+	for (;; mt_list_cpu_relax()) {
+		p2 = NULL;
+		if (__atomic_load_n(&el->next, __ATOMIC_RELAXED) == MT_LIST_BUSY)
+		        continue;
+
+		ret.next = __atomic_exchange_n(&el->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (ret.next == MT_LIST_BUSY)
+			continue;
+
+		ret.prev = __atomic_exchange_n(&el->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (ret.prev == MT_LIST_BUSY) {
+			el->next = ret.next;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+			continue;
+		}
+
+		if (ret.prev != el) {
+			p2 = __atomic_exchange_n(&ret.prev->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
+			if (p2 == MT_LIST_BUSY) {
+				*el = ret;
+				__atomic_thread_fence(__ATOMIC_RELEASE);
+				continue;
+			}
+		}
+
+		if (ret.next != el) {
+			n2 = __atomic_exchange_n(&ret.next->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
+			if (n2 == MT_LIST_BUSY) {
+				if (p2 != NULL)
+					ret.prev->next = p2;
+				*el = ret;
+				__atomic_thread_fence(__ATOMIC_RELEASE);
+				continue;
+			}
+		}
+		break;
+	}
+	return ret;
+}
+
+/* Reconnects two elements in a list. This is used to complete an element
+ * removal or just to unlock a list previously locked with mt_list_cut_after(),
+ * mt_list_cut_before(), or mt_list_cut_around(). The link element returned by
+ * these function just needs to be passed to this one. See examples above.
+ */
+static inline void mt_list_reconnect(struct mt_list ends)
+{
+	ends.next->prev = ends.prev;
+	ends.prev->next = ends.next;
+}
+
+
+/* Connects element <el> at both ends <ends> of a list which is still locked
+ * hence has the link between these endpoints cut. This automatically unlocks
+ * both the element and the list, and effectively results in inserting or
+ * appending the element to that list if the ends were just after or just
+ * before the list's head. It may also be used to unlock a previously locked
+ * element since locking an element consists in cutting the links around it.
+ * The element doesn't need to be previously initialized as it gets blindly
+ * overwritten with <ends>. See examples above.
+ */
+static inline struct mt_list mt_list_connect_elem(struct mt_list *el, struct mt_list ends)
+{
+	*el = ends;
+	__atomic_thread_fence(__ATOMIC_RELEASE);
+
+	if (__builtin_expect(ends.next != el, 1))
+		ends.next->prev = el;
+	if (__builtin_expect(ends.prev != el, 1))
+		ends.prev->next = el;
+}
 
 #endif /* _MT_LIST_H */

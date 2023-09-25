@@ -160,7 +160,7 @@ struct mt_list {
 #define MT_LIST_CUT_AFTER(el)           (mt_list_cut_after(el))
 #define MT_LIST_CUT_BEFORE(el)          (mt_list_cut_before(el))
 #define MT_LIST_CUT_AROUND(el)          (mt_list_cut_around(el))
-#define MT_LIST_RECONNECT(ends)         (mt_list_reconnect(ends))
+#define MT_LIST_CONNECT_ENDS(ends)      (mt_list_connect_ends(ends))
 #define MT_LIST_CONNECT_ELEM(el, ends)  (mt_list_connect_elem(el, ends))
 
 
@@ -675,8 +675,8 @@ static MT_INLINE struct mt_list *mt_list_pop(struct mt_list *lh)
 /* Opens the list just after <lh> which usually is the list's head, but not
  * necessarily. The link between <lh> and its next element is cut and replaced
  * with an MT_LIST_BUSY lock. The ends of the removed link are returned as an
- * mt_list entry. The operation can be cancelled using mt_list_reconnect() on
- * the returned value, which will restore the link and unlock the list, or
+ * mt_list entry. The operation can be cancelled using mt_list_connect_ends()
+ * on the returned value, which will restore the link and unlock the list, or
  * using mt_list_connect_elem() which will replace the link with another
  * element and also unlock the list, effectively resulting in inserting that
  * element after <lh>. Example:
@@ -688,7 +688,7 @@ static MT_INLINE struct mt_list *mt_list_pop(struct mt_list *lh)
  *     if (el)
  *         mt_list_connect_elem(el, tmp);
  *     else
- *         mt_list_reconnect(tmp);
+ *         mt_list_connect_ends(tmp);
  *     return el;
  *   }
  */
@@ -717,8 +717,8 @@ static MT_INLINE struct mt_list mt_list_cut_after(struct mt_list *lh)
 /* Opens the list just before <lh> which usually is the list's head, but not
  * necessarily. The link between <lh> and its prev element is cut and replaced
  * with an MT_LIST_BUSY lock. The ends of the removed link are returned as an
- * mt_list entry. The operation can be cancelled using mt_list_reconnect() on
- * the returned value, which will restore the link and unlock the list, or
+ * mt_list entry. The operation can be cancelled using mt_list_connect_ends()
+ * on the returned value, which will restore the link and unlock the list, or
  * using mt_list_connect_elem() which will replace the link with another
  * element and also unlock the list, effectively resulting in inserting that
  * element before <lh>. Example:
@@ -730,7 +730,7 @@ static MT_INLINE struct mt_list mt_list_cut_after(struct mt_list *lh)
  *     if (el)
  *         mt_list_connect_elem(el, tmp);
  *     else
- *         mt_list_reconnect(tmp);
+ *         mt_list_connect_ends(tmp);
  *     return el;
  *   }
  */
@@ -762,20 +762,20 @@ static MT_INLINE struct mt_list mt_list_cut_before(struct mt_list *lh)
  * lock, and the ends of the element are returned as an mt_list entry. This
  * results in the element being detached from the list and both the element and
  * the list being locked. The operation can be terminated by calling
- * mt_list_reconnect() on the returned value, which will unlock the list and
+ * mt_list_connect_ends() on the returned value, which will unlock the list and
  * effectively result in the removal of the element from the list, or by
  * calling mt_list_connect_elem() to reinstall the element at its place in the
  * list, effectively consisting in a temporary lock of this element. Example:
  *
  *   struct mt_list *grow_shrink_remove(struct mt_list *el, size_t new_size)
  *   {
- *     struct mt_list *tmp = mt_list_cut_around(&node->list);
+ *     struct mt_list tmp = mt_list_cut_around(&node->list);
  *     struct mt_list *new = new_size ? realloc(el, new_size) : NULL;
  *     if (new_size) {
  *         mt_list_connect_elem(new ? new : el, tmp);
  *     } else {
  *         free(el);
- *         mt_list_reconnect(tmp);
+ *         mt_list_connect_ends(tmp);
  *     }
  *     return new;
  *   }
@@ -827,12 +827,15 @@ static MT_INLINE struct mt_list mt_list_cut_around(struct mt_list *el)
 	return ret;
 }
 
-/* Reconnects two elements in a list. This is used to complete an element
- * removal or just to unlock a list previously locked with mt_list_cut_after(),
- * mt_list_cut_before(), or mt_list_cut_around(). The link element returned by
- * these function just needs to be passed to this one. See examples above.
+/* Connects two ends in a list. It takes a list head which contains a pointer
+ * to the previous and next elements to connect together. It can typically be
+ * the copy of an element that was extracted and whose neighbors need to be
+ * reconnected. This is used to complete an element removal or just to unlock
+ * a list previously locked with mt_list_cut_after(), mt_list_cut_before(), or
+ * mt_list_cut_around(). The link element returned by these function just needs
+ * to be passed to this one. See examples above.
  */
-static inline void mt_list_reconnect(struct mt_list ends)
+static inline void mt_list_connect_ends(struct mt_list ends)
 {
 	ends.next->prev = ends.prev;
 	ends.prev->next = ends.next;
@@ -993,7 +996,7 @@ static MT_INLINE struct mt_list *_mt_list_lock_prev(struct mt_list *el)
 			 * which is not possible by construction.		\
 			 */							\
 			MT_ALREADY_CHECKED(back.prev);				\
-			mt_list_reconnect(back);				\
+			mt_list_connect_ends(back);				\
 		}								\
 	     })									\
 	)

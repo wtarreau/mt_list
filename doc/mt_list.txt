@@ -243,7 +243,7 @@ mt_list_pop(l)
 mt_list_cut_after(elt)
     Cuts the list after the specified element. The link is replaced by two
     locked pointers, and is returned as a list element. The list must then
-    be unlocked using mt_list_reconnect() or mt_list_connect_elem() applied
+    be unlocked using mt_list_connect_ends() or mt_list_connect_elem() applied
     to the returned list element.
 
   before:
@@ -265,7 +265,7 @@ mt_list_cut_after(elt)
 mt_list_cut_before(elt)
     Cuts the list before the specified element. The link is replaced by two
     locked pointers, and is returned as a list element. The list must then
-    be unlocked using mt_list_reconnect() or mt_list_connect_elem() applied
+    be unlocked using mt_list_connect_ends() or mt_list_connect_elem() applied
     to the returned list element.
 
   before:
@@ -290,7 +290,7 @@ mt_list_cut_around(elt)
     links are returned as a single list element (which corresponds to the
     element's before locking). The list must then be unlocked using
     mt_list_connect_elem() to reconnect the element to the list and unlock
-    both, or mt_list_reconnect() to effectively remove the element.
+    both, or mt_list_connect_ends() to effectively remove the element.
 
   before:
        +---+     +---+     +---+     +---+     +---+     +---+
@@ -308,7 +308,7 @@ mt_list_cut_around(elt)
   value:    <=============>
 
 
-mt_list_reconnect(ends)
+mt_list_connect_ends(ends)
     Connect both ends of the specified locked list as if they were linked
     together, and unlocks the list. This can complete an element removal
     operation that was started using mt_list_cut_around(), or can restore a

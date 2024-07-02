@@ -851,7 +851,7 @@ static inline void mt_list_connect_ends(struct mt_list ends)
  * The element doesn't need to be previously initialized as it gets blindly
  * overwritten with <ends>. See examples above.
  */
-static inline struct mt_list mt_list_connect_elem(struct mt_list *el, struct mt_list ends)
+static inline void mt_list_connect_elem(struct mt_list *el, struct mt_list ends)
 {
 	*el = ends;
 	__atomic_thread_fence(__ATOMIC_RELEASE);

@@ -15,8 +15,13 @@ may be concurrently manipulated at different locations. The principle is to
 act on the links between the elements instead of the elements themselves. This
 is achieved by temporarily "cutting" these links, which effectively consists in
 replacing the ends of the links with special pointers serving as a lock, called
-MT_LIST_BUSY. An element is considered locked when either its next or prev
-pointer is equal to this MT_LIST_BUSY pointer (or both).
+MT_LIST_BUSY. An element is considered locked when both its next and prev
+pointers are equal to this MT_LIST_BUSY pointer. A link is locked when both of
+its ends are equal to this MT_LIST_BUSY pointer, i.e. the next pointer of the
+element at the source of the link and the prev pointer of the element the link
+points to. It's worth noting that a locked link by definition no longer exists
+since neither end knows where it was pointing to, unless a backup of it was
+made prior to locking it.
 
 The next and prev pointers are replaced by the list manipulation functions
 using atomic exchange. This means that the caller knows if the element it tries
@@ -238,6 +243,94 @@ mt_list_pop(l)
     #=>| A |<=#
     #  +---+  #
     #=========#
+
+
+_mt_list_lock_next(elt)
+    Locks the link that starts at the next pointer of the designated element.
+    The link is replaced by two locked pointers, and a pointer to the next
+    element is returned. The link must then be unlocked using
+    _mt_list_unlock_next() passing it this pointer, or mt_list_connect_ends().
+    This function is not intended to be used by applications, and makes certain
+    assumptions about the state of the list pertaining to its use in iterators.
+
+  before:
+       +---+     +---+     +---+     +---+     +---+     +---+
+    #=>|elt|<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
+    #  +---+     +---+     +---+     +---+     +---+     +---+  #
+    #===========================================================#
+
+  after:
+       +---+     +---+     +---+     +---+     +---+     +---+
+    #=>|elt|x   x| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
+    #  +---+     +---+     +---+     +---+     +---+     +---+  #
+    #===========================================================#
+
+  Return
+  value:    &B
+
+
+_mt_list_unlock_next(elt, back)
+    Unlocks the link that starts at the next pointer of the designated element
+    and is supposed to end at <back>. This function is not intended to be used
+    by applications, and makes certain assumptions about the state of the list
+    pertaining to its use in iterators.
+
+  before:       back
+                  \
+       +---+     +---+     +---+     +---+     +---+     +---+
+    #=>|elt|x   x| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
+    #  +---+     +---+     +---+     +---+     +---+     +---+  #
+    #===========================================================#
+
+  after:
+       +---+     +---+     +---+     +---+     +---+     +---+
+    #=>|elt|<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
+    #  +---+     +---+     +---+     +---+     +---+     +---+  #
+    #===========================================================#
+
+
+_mt_list_lock_prev(elt)
+    Locks the link that starts at the prev pointer of the designated element.
+    The link is replaced by two locked pointers, and a pointer to the prev
+    element is returned. The link must then be unlocked using
+    _mt_list_unlock_prev() passing it this pointer, or mt_list_connect_ends().
+    This function is not intended to be used by applications, and makes certain
+    assumptions about the state of the list pertaining to its use in iterators.
+
+  before:
+       +---+     +---+     +---+     +---+     +---+     +---+
+    #=>| A |<===>|elt|<===>| C |<===>| D |<===>| E |<===>| F |<=#
+    #  +---+     +---+     +---+     +---+     +---+     +---+  #
+    #===========================================================#
+
+  after:
+       +---+     +---+     +---+     +---+     +---+     +---+
+    #=>| A |x   x|elt|<===>| C |<===>| D |<===>| E |<===>| F |<=#
+    #  +---+     +---+     +---+     +---+     +---+     +---+  #
+    #===========================================================#
+
+  Return
+  value:    &A
+
+
+_mt_list_unlock_prev(elt, back)
+    Unlocks the link that starts at the prev pointer of the designated element
+    and is supposed to end at <back>. This function is not intended to be used
+    by applications, and makes certain assumptions about the state of the list
+    pertaining to its use in iterators.
+
+  before:   back
+           /
+       +---+     +---+     +---+     +---+     +---+     +---+
+    #=>| A |x   x|elt|<===>| C |<===>| D |<===>| E |<===>| F |<=#
+    #  +---+     +---+     +---+     +---+     +---+     +---+  #
+    #===========================================================#
+
+  after:
+       +---+     +---+     +---+     +---+     +---+     +---+
+    #=>| A |<===>|elt|<===>| C |<===>| D |<===>| E |<===>| F |<=#
+    #  +---+     +---+     +---+     +---+     +---+     +---+  #
+    #===========================================================#
 
 
 mt_list_cut_after(elt)

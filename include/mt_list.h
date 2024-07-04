@@ -865,7 +865,8 @@ static inline void mt_list_connect_elem(struct mt_list *el, struct mt_list ends)
 
 /*****************************************************************************
  * The macros and functions below are only used by the iterators. These must *
- * not be used for other purposes!                                           *
+ * not be used for other purposes unless the caller 100% complies with their *
+ * specific validity domain!                                                 *
  *****************************************************************************/
 
 
@@ -885,9 +886,10 @@ static inline void _mt_list_unlock_next(struct mt_list *el, struct mt_list *back
 
 
 /* Unlocks element <el> from the backup copy of previous prev pointer <back>.
- * <back> cannot be equal to <el> here because if the list is empty, the list's
+ * It's the caller's responsibility to make sure that <back> is not equal to
+ * <el> here (this is OK in iterators because if the list is empty, the list's
  * head is not locked for prev and the caller has NULL in back.prev, thus does
- * not call this function.
+ * not call this function).
  */
 static inline void _mt_list_unlock_prev(struct mt_list *el, struct mt_list *back)
 {
@@ -930,8 +932,9 @@ static MT_INLINE struct mt_list *_mt_list_lock_next(struct mt_list *el)
 
 
 /* Locks the link designated by element <el>'s prev pointer and returns its
- * previous value. The element cannot loop over itself because the caller will
- * only lock the prev pointer on an non-empty list.
+ * previous value. The caller must ensure that the element does not loop over
+ * itself (which is OK in iterators because the caller will only lock the prev
+ * pointer on an non-empty list).
  */
 static MT_INLINE struct mt_list *_mt_list_lock_prev(struct mt_list *el)
 {

@@ -161,7 +161,7 @@ struct mt_list {
 #define MT_LIST_LOCK_PREV(el)           (mt_list_lock_prev(el))
 #define MT_LIST_LOCK_FULL(el)           (mt_list_lock_full(el))
 #define MT_LIST_CONNECT_ENDS(ends)      (mt_list_connect_ends(ends))
-#define MT_LIST_CONNECT_ELEM(el, ends)  (mt_list_connect_elem(el, ends))
+#define MT_LIST_UNLOCK_FULL(el, ends)   (mt_list_unlock_full(el, ends))
 
 
 /* This is a Xorshift-based thread-local PRNG aimed at reducing the risk of
@@ -677,7 +677,7 @@ static MT_INLINE struct mt_list *mt_list_pop(struct mt_list *lh)
  * with an MT_LIST_BUSY lock. The ends of the removed link are returned as an
  * mt_list entry. The operation can be cancelled using mt_list_connect_ends()
  * on the returned value, which will restore the link and unlock the list, or
- * using mt_list_connect_elem() which will replace the link with another
+ * using mt_list_unlock_full() which will replace the link with another
  * element and also unlock the list, effectively resulting in inserting that
  * element after <lh>. Example:
  *
@@ -686,7 +686,7 @@ static MT_INLINE struct mt_list *mt_list_pop(struct mt_list *lh)
  *     struct mt_list tmp = mt_list_lock_next(list);
  *     struct mt_list *el = alloc_element_to_insert();
  *     if (el)
- *         mt_list_connect_elem(el, tmp);
+ *         mt_list_unlock_full(el, tmp);
  *     else
  *         mt_list_connect_ends(tmp);
  *     return el;
@@ -719,7 +719,7 @@ static MT_INLINE struct mt_list mt_list_lock_next(struct mt_list *lh)
  * with an MT_LIST_BUSY lock. The ends of the removed link are returned as an
  * mt_list entry. The operation can be cancelled using mt_list_connect_ends()
  * on the returned value, which will restore the link and unlock the list, or
- * using mt_list_connect_elem() which will replace the link with another
+ * using mt_list_unlock_full() which will replace the link with another
  * element and also unlock the list, effectively resulting in inserting that
  * element before <lh>. Example:
  *
@@ -728,7 +728,7 @@ static MT_INLINE struct mt_list mt_list_lock_next(struct mt_list *lh)
  *     struct mt_list tmp = mt_list_lock_prev(list);
  *     struct mt_list *el = alloc_element_to_insert();
  *     if (el)
- *         mt_list_connect_elem(el, tmp);
+ *         mt_list_unlock_full(el, tmp);
  *     else
  *         mt_list_connect_ends(tmp);
  *     return el;
@@ -764,7 +764,7 @@ static MT_INLINE struct mt_list mt_list_lock_prev(struct mt_list *lh)
  * the list being locked. The operation can be terminated by calling
  * mt_list_connect_ends() on the returned value, which will unlock the list and
  * effectively result in the removal of the element from the list, or by
- * calling mt_list_connect_elem() to reinstall the element at its place in the
+ * calling mt_list_unlock_full() to reinstall the element at its place in the
  * list, effectively consisting in a temporary lock of this element. Example:
  *
  *   struct mt_list *grow_shrink_remove(struct mt_list *el, size_t new_size)
@@ -772,7 +772,7 @@ static MT_INLINE struct mt_list mt_list_lock_prev(struct mt_list *lh)
  *     struct mt_list tmp = mt_list_lock_full(&node->list);
  *     struct mt_list *new = new_size ? realloc(el, new_size) : NULL;
  *     if (new_size) {
- *         mt_list_connect_elem(new ? new : el, tmp);
+ *         mt_list_unlock_full(new ? new : el, tmp);
  *     } else {
  *         free(el);
  *         mt_list_connect_ends(tmp);
@@ -846,12 +846,14 @@ static inline void mt_list_connect_ends(struct mt_list ends)
  * hence has the link between these endpoints cut. This automatically unlocks
  * both the element and the list, and effectively results in inserting or
  * appending the element to that list if the ends were just after or just
- * before the list's head. It may also be used to unlock a previously locked
- * element since locking an element consists in cutting the links around it.
+ * before the list's head. It is mainly used to unlock an element previously
+ * locked with mt_list_lock_full() by passing this function's return value as
+ * <ends>. After the operation, no locked pointer remains. This must not be
+ * used inside iterators as it would result in also unlocking the list itself.
  * The element doesn't need to be previously initialized as it gets blindly
  * overwritten with <ends>. See examples above.
  */
-static inline void mt_list_connect_elem(struct mt_list *el, struct mt_list ends)
+static inline void mt_list_unlock_full(struct mt_list *el, struct mt_list ends)
 {
 	*el = ends;
 	__atomic_thread_fence(__ATOMIC_RELEASE);

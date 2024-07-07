@@ -355,7 +355,7 @@ mt_list_lock_next(elt)
   value:    <===>
 
 
-mt_list_cut_before(elt)
+mt_list_lock_prev(elt)
     Cuts the list before the specified element. The link is replaced by two
     locked pointers, and is returned as a list element. The list must then
     be unlocked using mt_list_connect_ends() or mt_list_connect_elem() applied
@@ -404,7 +404,7 @@ mt_list_connect_ends(ends)
     Connect both ends of the specified locked list as if they were linked
     together, and unlocks the list. This can complete an element removal
     operation that was started using mt_list_lock_full(), or can restore a
-    list that was temporarily locked by mt_list_cut_{after,before}(). Note
+    list that was temporarily locked by mt_list_lock_{prev,next}(). Note
     that this is not meant to be used from within iterators, as the iterator
     will automatically and safely reconnect ends after each iteration.
 

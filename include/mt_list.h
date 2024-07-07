@@ -157,7 +157,7 @@ struct mt_list {
 #define MT_LIST_INSERT(l, e)            (mt_list_insert(l, e))
 #define MT_LIST_APPEND(l, e)            (mt_list_append(l, e))
 #define MT_LIST_DELETE(e)               (mt_list_delete(e))
-#define MT_LIST_CUT_AFTER(el)           (mt_list_cut_after(el))
+#define MT_LIST_LOCK_NEXT(el)           (mt_list_lock_next(el))
 #define MT_LIST_CUT_BEFORE(el)          (mt_list_cut_before(el))
 #define MT_LIST_LOCK_FULL(el)           (mt_list_lock_full(el))
 #define MT_LIST_CONNECT_ENDS(ends)      (mt_list_connect_ends(ends))
@@ -683,7 +683,7 @@ static MT_INLINE struct mt_list *mt_list_pop(struct mt_list *lh)
  *
  *   struct mt_list *list_insert(struct mt_list *list)
  *   {
- *     struct mt_list tmp = mt_list_cut_after(list);
+ *     struct mt_list tmp = mt_list_lock_next(list);
  *     struct mt_list *el = alloc_element_to_insert();
  *     if (el)
  *         mt_list_connect_elem(el, tmp);
@@ -692,7 +692,7 @@ static MT_INLINE struct mt_list *mt_list_pop(struct mt_list *lh)
  *     return el;
  *   }
  */
-static MT_INLINE struct mt_list mt_list_cut_after(struct mt_list *lh)
+static MT_INLINE struct mt_list mt_list_lock_next(struct mt_list *lh)
 {
 	struct mt_list el;
 	unsigned long loops = 0;
@@ -831,7 +831,7 @@ static MT_INLINE struct mt_list mt_list_lock_full(struct mt_list *el)
  * to the previous and next elements to connect together. It can typically be
  * the copy of an element that was extracted and whose neighbors need to be
  * reconnected. This is used to complete an element removal or just to unlock
- * a list previously locked with mt_list_cut_after(), mt_list_cut_before(), or
+ * a list previously locked with mt_list_lock_next(), mt_list_cut_before(), or
  * mt_list_lock_full(). The link element returned by these function just needs
  * to be passed to this one. See examples above.
  */

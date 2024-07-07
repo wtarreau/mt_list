@@ -333,7 +333,7 @@ _mt_list_unlock_prev(elt, back)
     #===========================================================#
 
 
-mt_list_cut_after(elt)
+mt_list_lock_next(elt)
     Cuts the list after the specified element. The link is replaced by two
     locked pointers, and is returned as a list element. The list must then
     be unlocked using mt_list_connect_ends() or mt_list_connect_elem() applied

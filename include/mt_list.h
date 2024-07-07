@@ -128,20 +128,22 @@ struct mt_list {
  * forbidden to branch (goto or return) from the loop because skipping the
  * cleanup will lead to undefined behavior.
  *
- * The current element is detached from the list while being visited, with its
- * extremities locked, and re-attached when switching to the next item. As such
- * in order to delete the current item, it's sufficient to set it to NULL to
+ * The current element is detached from the list while being visited, with both
+ * links locked, and re-attached when switching to the next item. As such in
+ * order to delete the current item, it's sufficient to set it to NULL to
  * prevent the inner loop from attaching it back. In this case it's recommended
- * to re-init the item before reusing it in order to clear the locks.
+ * to re-init the item before reusing it in order to clear the locks, in case
+ * this element is being waited upon from a concurrent thread, or is intended
+ * to be reused later (e.g. stored into a pool).
  *
  * Example:
- *   MT_LIST_FOR_EACH_ENTRY_SAFE(item, list_head, list_member, back) {
+ *   MT_LIST_FOR_EACH_ENTRY_LOCKED(item, list_head, list_member, back) {
  *     ...
  *   }
  */
-#define MT_LIST_FOR_EACH_ENTRY_SAFE(item, list_head, member, back) 		\
-	_MT_LIST_FOR_EACH_ENTRY_OUTER(item, list_head, member, back)	\
-		_MT_LIST_FOR_EACH_ENTRY_INNER(item, list_head, member, back)
+#define MT_LIST_FOR_EACH_ENTRY_LOCKED(item, list_head, member, back) 		\
+	_MT_LIST_FOR_EACH_ENTRY_LOCKED_OUTER(item, list_head, member, back)	\
+		_MT_LIST_FOR_EACH_ENTRY_LOCKED_INNER(item, list_head, member, back)
 
 
 /* The macros below directly map to their function equivalent. They are
@@ -1022,7 +1024,7 @@ static MT_INLINE struct mt_list *_mt_list_lock_prev(struct mt_list *el)
 }
 
 
-/* Outer loop of MT_LIST_FOR_EACH_ENTRY_SAFE(). Do not use directly!
+/* Outer loop of MT_LIST_FOR_EACH_ENTRY_LOCKED(). Do not use directly!
  * This loop is only used to unlock the last item after the end of the inner
  * loop is reached or if we break out of it.
  *
@@ -1032,7 +1034,7 @@ static MT_INLINE struct mt_list *_mt_list_lock_prev(struct mt_list *el)
  * happen after the first iteration, and making it implement exactly one round
  * and no more.
  */
-#define _MT_LIST_FOR_EACH_ENTRY_OUTER(item, lh, lm, back)			\
+#define _MT_LIST_FOR_EACH_ENTRY_LOCKED_OUTER(item, lh, lm, back)		\
 	for (/* init-expr: preset for one iteration */				\
 	     (back).prev = NULL,						\
 	     (back).next = _mt_list_lock_next(lh),				\
@@ -1067,15 +1069,18 @@ static MT_INLINE struct mt_list *_mt_list_lock_prev(struct mt_list *el)
 	)
 
 
-/* Inner loop of MT_LIST_FOR_EACH_ENTRY_SAFE(). Do not use directly!
+/* Inner loop of MT_LIST_FOR_EACH_ENTRY_LOCKED(). Do not use directly!
  * This loop iterates over all list elements and unlocks the previously visited
  * element. It stops when reaching the list's head, without unlocking the last
  * element, which is left to the outer loop to deal with, just like when hitting
  * a break. In order to preserve the locking, the loop takes care of always
  * locking the next element before unlocking the previous one. During the first
  * iteration, the prev element might be NULL since the head is singly-locked.
+ * Inside the execution block, the element is fully locked. The caller does not
+ * need to unlock it, unless other parts of the code expect it to be unlocked
+ * (concurrent watcher or element placed back into a pool for example).
  */
-#define _MT_LIST_FOR_EACH_ENTRY_INNER(item, lh, lm, back)			\
+#define _MT_LIST_FOR_EACH_ENTRY_LOCKED_INNER(item, lh, lm, back)		\
 	for (/* init-expr */							\
 	     item = MT_LIST_ELEM(lh, typeof(item), lm);				\
 	     /* cond-expr (thus executed before the body of the loop) */	\

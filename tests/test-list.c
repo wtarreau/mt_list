@@ -60,7 +60,7 @@ void *thread(void *pouet)
 				free(lol);
 			break;
 		case 3:
-			MT_LIST_FOR_EACH_ENTRY_SAFE(lol, &pouet_list, list_elt, elt2) {
+			MT_LIST_FOR_EACH_ENTRY_LOCKED(lol, &pouet_list, list_elt, elt2) {
 				if (rnd32() % 2) {
 					free(lol);
 					lol = NULL;

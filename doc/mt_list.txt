@@ -543,7 +543,7 @@ mt_list_unlock_full(elt, ends)
     #===========================================================#
 
 
-MT_LIST_FOR_EACH_ENTRY_SAFE(item, list_head, member, back)
+MT_LIST_FOR_EACH_ENTRY_LOCKED(item, list_head, member, back)
     Iterates <item> through a list of items of type "typeof(*item)" which are
     linked via a "struct mt_list" member named <member>. A pointer to the head
     of the list is passed in <list_head>. <back> is a temporary struct mt_list,
@@ -555,17 +555,18 @@ MT_LIST_FOR_EACH_ENTRY_SAFE(item, list_head, member, back)
     reached or user breaks from inner loop. It is safe to break from this macro
     as the cleanup will be performed anyway, but it is strictly forbidden to
     branch (goto or return) from the loop because skipping the cleanup will
-    lead to undefined behavior. During the scan of the list, the item is locked
-    thus disconnected and the list locked around it, so concurrent operations
-    on the list are safe. However the thread holding the list locked must be
-    careful not to perform other locking operations. In order to remove the
-    current element, setting <item> to NULL is sufficient to make the inner
-    loop not try to re-attach it. It is recommended to reinitialize it though
-    if it is expected to be reused, so as not to leave its pointers locked.
+    lead to undefined behavior. During the scan of the list, the item has both
+    of its links locked, so concurrent operations on the list are safe. However
+    the thread holding the list locked must be careful not to perform other
+    locking operations. In order to remove the current element, setting <item>
+    to NULL is sufficient to make the inner loop not try to re-attach it. It is
+    recommended to reinitialize it though if it is expected to be reused, so as
+    not to leave its pointers locked. Same if other threads are trying to
+    concurrently operate on the element.
 
     From within the loop, the list looks like this:
 
-        MT_LIST_FOR_EACH_ENTRY_SAFE(item, lh, list, back) {
+        MT_LIST_FOR_EACH_ENTRY_LOCKED(item, lh, list, back) {
             //                    A             C
             //           back:    <=============>
             //                       item->list
@@ -607,7 +608,7 @@ The same pointers are used for both lists and placed in an anonymous union.
    int budget = 50;
 
    /* collect up to 50 shared items */
-   MT_LIST_FOR_EACH_ENTRY_SAFE(item, &global_job_queue, mt_list, back) {
+   MT_LIST_FOR_EACH_ENTRY_LOCKED(item, &global_job_queue, mt_list, back) {
         if (!(item->thread_mask & current_thread_bit))
             continue;  /* job not eligible for this thread */
         LIST_APPEND(&local_job_queue, &item->list);

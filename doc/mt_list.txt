@@ -377,6 +377,92 @@ mt_list_lock_prev(elt)
   value:    <===>
 
 
+mt_list_lock_elem(elt)
+    Locks the element only. Both of its pointers are replaced by two locked
+    pointers, and the previous ones are returned as a list element. It's not
+    possible to remove such an element from a list since neighbors are not
+    locked. The sole purpose of this operation is to prevent another thread
+    from visiting this element during an operation. The element must then be
+    unlocked using mt_list_unlock_elem() applied to the returned element.
+
+  before:
+       +---+     +---+     +---+     +---+     +---+     +---+
+    #=>| A |<===>|elt|<===>| C |<===>| D |<===>| E |<===>| F |<=#
+    #  +---+     +---+     +---+     +---+     +---+     +---+  #
+    #===========================================================#
+
+  after:
+       +---+     +---+     +---+     +---+     +---+     +---+
+    #=>| A |=>  x|elt|x  <=| C |<===>| D |<===>| E |<===>| F |<=#
+    #  +---+     +---+     +---+     +---+     +---+     +---+  #
+    #===========================================================#
+
+  Return    A   C
+  value:    <===>
+
+
+mt_list_unlock_elem(elt, ends)
+    Unlocks the element only by restoring its backed up contents from <ends>,
+    as returned by a previous call to mt_list_lock_elem(elt). The ends of the
+    links are not affected, only the element is touched. This is intended to
+    terminate a critical section started by a call to mt_list_lock_elem(). It
+    may also be used on a fully locked element processed by mt_list_lock_full()
+    in which case it will leave the list still locked.
+
+  before:
+            A   C
+      ends: <===>
+
+       +---+     +---+     +---+     +---+     +---+     +---+
+    #=>| A |=>  x|elt|x  <=| C |<===>| D |<===>| E |<===>| F |<=#
+    #  +---+     +---+     +---+     +---+     +---+     +---+  #
+    #===========================================================#
+
+  after:
+       +---+     +---+     +---+     +---+     +---+     +---+
+    #=>| A |<===>|elt|<===>| C |<===>| D |<===>| E |<===>| F |<=#
+    #  +---+     +---+     +---+     +---+     +---+     +---+  #
+    #===========================================================#
+
+  before:
+            A   C
+      ends: <===>
+
+       +---+     +---+     +---+     +---+     +---+     +---+
+    #=>| A |x   x|elt|x   x| C |<===>| D |<===>| E |<===>| F |<=#
+    #  +---+     +---+     +---+     +---+     +---+     +---+  #
+    #===========================================================#
+
+  after:
+       +---+     +---+     +---+     +---+     +---+     +---+
+    #=>| A |x  <=|elt|=>  x| C |<===>| D |<===>| E |<===>| F |<=#
+    #  +---+     +---+     +---+     +---+     +---+     +---+  #
+    #===========================================================#
+
+
+mt_list_unlock_self(elt)
+    Unlocks the element only by resetting it (i.e. making it loop over itself).
+    This is useful in the locked variant of iterators when the element is to be
+    removed from the list and first needs to be unlocked because it's shared
+    with other operations (such as a concurrent attempt to delete it from a
+    list), or simply in case it is to be recycled in a usable state. The ends
+    of the links are not affected, only the element is touched. This is
+    normally only used from within locked iterators, which perform a full lock
+    (both links are locked).
+
+  before:
+       +---+     +---+     +---+     +---+     +---+     +---+
+    #=>| A |x   x|elt|x   x| C |<===>| D |<===>| E |<===>| F |<=#
+    #  +---+     +---+     +---+     +---+     +---+     +---+  #
+    #===========================================================#
+
+  after:
+       +---+         +---+     +---+     +---+     +---+     +---+
+    #=>|elt|<=#   #=>| A |x   x| C |<===>| D |<===>| E |<===>| F |<=#
+    #  +---+  #   #  +---+     +---+     +---+     +---+     +---+  #
+    #=========#   #=================================================#
+
+
 mt_list_lock_full(elt)
     Locks both the element and its surrounding links. The extremities of the
     previous links are returned as a single list element (which corresponds to

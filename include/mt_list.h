@@ -551,7 +551,7 @@ static MT_INLINE void mt_list_append(struct mt_list *lh, struct mt_list *el)
  * success status:
  *   link = mt_list_lock_full(el);
  *   mt_list_unlock_link(link);
- *   mt_list_unlock_iterator(link);
+ *   mt_list_unlock_self(link);
  */
 static MT_INLINE long mt_list_delete(struct mt_list *el)
 {
@@ -758,6 +758,57 @@ static MT_INLINE struct mt_list mt_list_lock_prev(struct mt_list *lh)
 		break;
 	}
 	return el;
+}
+
+
+/* Element <el> is locked on both sides, but the list around it isn't touched.
+ * A copy of the previous element is returned, and may be used to pass to
+ * mt_list_unlock_elem() to unlock and reconnect the element.
+ */
+static MT_INLINE struct mt_list mt_list_lock_elem(struct mt_list *el)
+{
+	unsigned long loops = 0;
+	struct mt_list ret;
+
+	for (;; mt_list_cpu_relax(loops = loops * 8 + 7)) {
+		if (__atomic_load_n(&el->next, __ATOMIC_RELAXED) == MT_LIST_BUSY)
+		        continue;
+
+		ret.next = __atomic_exchange_n(&el->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (ret.next == MT_LIST_BUSY)
+			continue;
+
+		ret.prev = __atomic_exchange_n(&el->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
+		if (ret.prev == MT_LIST_BUSY) {
+			el->next = ret.next;
+			__atomic_thread_fence(__ATOMIC_RELEASE);
+			continue;
+		}
+		break;
+	}
+	return ret;
+}
+
+
+/* Restores element <el> to its previous copy <back>, effectively unlocking it.
+ * This is to be used with the returned element from mt_list_lock_elem().
+ */
+static inline void mt_list_unlock_elem(struct mt_list *el, struct mt_list back)
+{
+	*el = back;
+	__atomic_thread_fence(__ATOMIC_RELEASE);
+}
+
+
+/* Atomically resets element <el> by connecting it onto itself ignoring
+ * previous contents. This is used to unlock a locked element inside iterators
+ * so that the inner block sees an unlocked iterator.
+ */
+static inline void mt_list_unlock_self(struct mt_list *el)
+{
+	el->next = el;
+	el->prev = el;
+	__atomic_thread_fence(__ATOMIC_RELEASE);
 }
 
 

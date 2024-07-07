@@ -159,7 +159,7 @@ struct mt_list {
 #define MT_LIST_DELETE(e)               (mt_list_delete(e))
 #define MT_LIST_CUT_AFTER(el)           (mt_list_cut_after(el))
 #define MT_LIST_CUT_BEFORE(el)          (mt_list_cut_before(el))
-#define MT_LIST_CUT_AROUND(el)          (mt_list_cut_around(el))
+#define MT_LIST_LOCK_FULL(el)           (mt_list_lock_full(el))
 #define MT_LIST_CONNECT_ENDS(ends)      (mt_list_connect_ends(ends))
 #define MT_LIST_CONNECT_ELEM(el, ends)  (mt_list_connect_elem(el, ends))
 
@@ -769,7 +769,7 @@ static MT_INLINE struct mt_list mt_list_cut_before(struct mt_list *lh)
  *
  *   struct mt_list *grow_shrink_remove(struct mt_list *el, size_t new_size)
  *   {
- *     struct mt_list tmp = mt_list_cut_around(&node->list);
+ *     struct mt_list tmp = mt_list_lock_full(&node->list);
  *     struct mt_list *new = new_size ? realloc(el, new_size) : NULL;
  *     if (new_size) {
  *         mt_list_connect_elem(new ? new : el, tmp);
@@ -780,7 +780,7 @@ static MT_INLINE struct mt_list mt_list_cut_before(struct mt_list *lh)
  *     return new;
  *   }
  */
-static MT_INLINE struct mt_list mt_list_cut_around(struct mt_list *el)
+static MT_INLINE struct mt_list mt_list_lock_full(struct mt_list *el)
 {
 	struct mt_list *n2;
 	struct mt_list *p2;
@@ -832,7 +832,7 @@ static MT_INLINE struct mt_list mt_list_cut_around(struct mt_list *el)
  * the copy of an element that was extracted and whose neighbors need to be
  * reconnected. This is used to complete an element removal or just to unlock
  * a list previously locked with mt_list_cut_after(), mt_list_cut_before(), or
- * mt_list_cut_around(). The link element returned by these function just needs
+ * mt_list_lock_full(). The link element returned by these function just needs
  * to be passed to this one. See examples above.
  */
 static inline void mt_list_connect_ends(struct mt_list ends)

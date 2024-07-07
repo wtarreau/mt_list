@@ -377,11 +377,10 @@ mt_list_cut_before(elt)
   value:    <===>
 
 
-mt_list_cut_around(elt)
-    Cuts the list both before and after the specified element. Both the list
-    and the element's pointers are locked. The extremities of the previous
-    links are returned as a single list element (which corresponds to the
-    element's before locking). The list must then be unlocked using
+mt_list_lock_full(elt)
+    Locks both the element and its surrounding links. The extremities of the
+    previous links are returned as a single list element (which corresponds to
+    the element's before locking). The list must then be unlocked using
     mt_list_connect_elem() to reconnect the element to the list and unlock
     both, or mt_list_connect_ends() to effectively remove the element.
 
@@ -404,8 +403,10 @@ mt_list_cut_around(elt)
 mt_list_connect_ends(ends)
     Connect both ends of the specified locked list as if they were linked
     together, and unlocks the list. This can complete an element removal
-    operation that was started using mt_list_cut_around(), or can restore a
-    list that was temporarily locked by mt_list_cut_{after,before}().
+    operation that was started using mt_list_lock_full(), or can restore a
+    list that was temporarily locked by mt_list_cut_{after,before}(). Note
+    that this is not meant to be used from within iterators, as the iterator
+    will automatically and safely reconnect ends after each iteration.
 
   before:
             A   C
@@ -426,7 +427,7 @@ mt_list_connect_ends(ends)
 mt_list_connect_elem(elt,ends)
     Connects the specified element to the elements pointed to by the specified
     ends. This can be used to insert an element into a previously locked and
-    cut list, or to restore a list as it was before mt_list_cut_around(elt).
+    cut list, or to restore a list as it was before mt_list_lock_full(elt).
     The element's list part is effectively replaced by the contents of the
     ends.
 

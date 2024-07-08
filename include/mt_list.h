@@ -281,9 +281,6 @@ static MT_INLINE long mt_list_try_insert(struct mt_list *lh, struct mt_list *el)
 	 * less than if we attempted a change that would invalidate it.
 	 */
 	for (;; mt_list_cpu_relax(loops = loops * 8 + 7)) {
-		if (__atomic_load_n(&lh->next, __ATOMIC_RELAXED) == MT_LIST_BUSY)
-		        continue;
-
 		n = __atomic_exchange_n(&lh->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
 		if (n == MT_LIST_BUSY)
 		        continue;
@@ -366,9 +363,6 @@ static MT_INLINE long mt_list_try_append(struct mt_list *lh, struct mt_list *el)
 	 * less than if we attempted a change that would invalidate it.
 	 */
 	for (;; mt_list_cpu_relax(loops = loops * 8 + 7)) {
-		if (__atomic_load_n(&lh->prev, __ATOMIC_RELAXED) == MT_LIST_BUSY)
-		        continue;
-
 		p = __atomic_exchange_n(&lh->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
 		if (p == MT_LIST_BUSY)
 		        continue;
@@ -634,9 +628,6 @@ static MT_INLINE struct mt_list *mt_list_pop(struct mt_list *lh)
 	unsigned long loops = 0;
 
 	for (;; mt_list_cpu_relax(loops = loops * 8 + 7)) {
-		if (__atomic_load_n(&lh->next, __ATOMIC_RELAXED) == MT_LIST_BUSY)
-		        continue;
-
 		n = __atomic_exchange_n(&lh->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
 		if (n == MT_LIST_BUSY)
 			continue;
@@ -785,9 +776,6 @@ static MT_INLINE struct mt_list mt_list_lock_elem(struct mt_list *el)
 	struct mt_list ret;
 
 	for (;; mt_list_cpu_relax(loops = loops * 8 + 7)) {
-		if (__atomic_load_n(&el->next, __ATOMIC_RELAXED) == MT_LIST_BUSY)
-		        continue;
-
 		ret.next = __atomic_exchange_n(&el->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
 		if (ret.next == MT_LIST_BUSY)
 			continue;
@@ -859,9 +847,6 @@ static MT_INLINE struct mt_list mt_list_lock_full(struct mt_list *el)
 
 	for (;; mt_list_cpu_relax(loops = loops * 8 + 7)) {
 		p2 = NULL;
-		if (__atomic_load_n(&el->next, __ATOMIC_RELAXED) == MT_LIST_BUSY)
-		        continue;
-
 		ret.next = __atomic_exchange_n(&el->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
 		if (ret.next == MT_LIST_BUSY)
 			continue;
@@ -987,8 +972,6 @@ static MT_INLINE struct mt_list *_mt_list_lock_next(struct mt_list *el)
 	unsigned long loops = 0;
 
 	for (;; mt_list_cpu_relax(loops = loops * 8 + 7)) {
-		if (__atomic_load_n(&el->next, __ATOMIC_RELAXED) == MT_LIST_BUSY)
-			continue;
 		n = __atomic_exchange_n(&el->next, MT_LIST_BUSY, __ATOMIC_RELAXED);
 		if (n == MT_LIST_BUSY)
 			continue;
@@ -1018,8 +1001,6 @@ static MT_INLINE struct mt_list *_mt_list_lock_prev(struct mt_list *el)
 	unsigned long loops = 0;
 
 	for (;; mt_list_cpu_relax(loops = loops * 8 + 7)) {
-		if (__atomic_load_n(&el->prev, __ATOMIC_RELAXED) == MT_LIST_BUSY)
-			continue;
 		p = __atomic_exchange_n(&el->prev, MT_LIST_BUSY, __ATOMIC_RELAXED);
 		if (p == MT_LIST_BUSY)
 			continue;

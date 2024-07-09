@@ -37,13 +37,11 @@ void *thread(void *pouet)
 	struct pouet_lol *lol;
 	struct mt_list elt2;
 	tid = (uintptr_t)pouet;
-	int i = 0;
+	int i;
 
 	rnd32_state += tid;
 
-	for (int i = 0; i < MAX_ACTION; i++) {
-		struct pouet_lol *lol;
-		struct mt_list elt2;
+	for (i = 0; i < MAX_ACTION; i++) {
 		switch (rnd32() % 4) {
 		case 0:
 			lol = malloc(sizeof(*lol));
@@ -78,6 +76,7 @@ void *thread(void *pouet)
 		if ((i) / (MAX_ACTION/10) != (i+1) / (MAX_ACTION/10))
 			printf("%u: %d\n", tid, i+1);
 	}
+	return NULL;
 }
 
 int main(int argc, char *argv[])

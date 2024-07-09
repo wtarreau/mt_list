@@ -72,7 +72,7 @@ struct mt_list {
  *
  *   return MT_LIST_ELEM(cur_node->args.next, struct node *, args)
  */
-#define MT_LIST_ELEM(a, t, m) ((t)(((const char *)(a)) - ((size_t)&((t)NULL)->m)))
+#define MT_LIST_ELEM(a, t, m) ((t)(size_t)(((size_t)(a)) - ((size_t)&((t)NULL)->m)))
 
 
 /* Returns a pointer of type <t> to a structure following the element which

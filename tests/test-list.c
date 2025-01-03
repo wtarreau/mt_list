@@ -81,7 +81,7 @@ void *thread(void *pouet)
 
 int main(int argc, char *argv[])
 {
-	int nb;
+	int nb, i;
 	pthread_t *pth;
 
 	srandom(time(NULL));
@@ -101,11 +101,11 @@ int main(int argc, char *argv[])
 		printf("Shot failed to connect.\n");
 		exit(1);
 	}
-	for (int i = 0; i < nb; i++) {
+	for (i = 0; i < nb; i++) {
 		pthread_create(&pth[i], NULL, thread, (void *)(uintptr_t)i);
 
 	}
-	for (int i = 0; i < nb; i++)
+	for (i = 0; i < nb; i++)
 		pthread_join(pth[i], NULL);
 	return 0;
 }

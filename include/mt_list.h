@@ -215,6 +215,29 @@ static inline unsigned int mt_list_wait(unsigned factor)
 /* This function relaxes the CPU during contention. It is meant to be
  * architecture-specific and may even be OS-specific, and always exists in a
  * generic version. It should return a non-null integer value that can be used
+ * as a boolean in while() loops. It waits for the smallest possible amount of
+ * time supported on the platform.
+ */
+static inline __attribute__((always_inline)) unsigned long mt_list_cpu_relax1()
+{
+#if defined(__x86_64__)
+/* This is a PAUSE instruction on x86_64 */
+	asm volatile("rep;nop\n");
+#elif defined(__aarch64__)
+	/* This was shown to improve fairness on modern ARMv8
+	 * such as Cortex A72 or Neoverse N1.
+	 */
+	asm volatile("isb");
+#else
+	/* Generic implementation */
+	asm volatile("");
+#endif
+	return 1;
+}
+
+/* This function relaxes the CPU during contention. It is meant to be
+ * architecture-specific and may even be OS-specific, and always exists in a
+ * generic version. It should return a non-null integer value that can be used
  * as a boolean in while() loops. The argument indicates the maximum number of
  * loops to be performed before returning.
  */
@@ -223,20 +246,9 @@ static inline __attribute__((always_inline)) unsigned long mt_list_cpu_relax(uns
 	/* limit maximum wait time for unlucky threads */
 	loop = mt_list_wait(loop);
 
-	for (loop &= 0x7fffff; loop >= 32; loop--) {
-#if defined(__x86_64__)
-		/* This is a PAUSE instruction on x86_64 */
-		asm volatile("rep;nop\n");
-#elif defined(__aarch64__)
-		/* This was shown to improve fairness on modern ARMv8
-		 * such as Cortex A72 or Neoverse N1.
-		 */
-		asm volatile("isb");
-#else
-		/* Generic implementation */
-		asm volatile("");
-#endif
-	}
+	for (loop &= 0x7fffff; loop >= 32; loop--)
+		mt_list_cpu_relax1();
+
 	/* faster ending */
 	while (loop--)
 		asm volatile("");

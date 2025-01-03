@@ -44,6 +44,25 @@
 #define __atomic_exchange_n(val, new, order) __atomic_exchange(val, new, __ATOMIC_SEQ_CST)
 #define __atomic_thread_fence(order) do { } while (0)
 #define __thread
+
+#elif (defined(__GNUC__) && (__GNUC__ < 5 || (__GNUC__ == 4 && __GNUC_MINOR__ < 7)))
+/* GCC before 4.7 doesn't have the __atomic_* API but only the older __sync_*
+ * one.
+ */
+#define __atomic_exchange_n(val, new, order)				\
+	({								\
+		typeof((val)) __val_xchg = (val);			\
+		typeof(*(val)) __old_xchg;				\
+		typeof((new)) __new_xchg = (new);			\
+		do {							\
+			__old_xchg = *__val_xchg;			\
+		} while (!__sync_bool_compare_and_swap(__val_xchg,	\
+		                                       __old_xchg,	\
+		                                       __new_xchg) &&	\
+		         mt_list_cpu_relax1());				\
+		__old_xchg;						\
+	})
+#define __atomic_thread_fence(order) do { } while (0)
 #endif
 
 /* set NOINLINE to forcefully disable user functions inlining */

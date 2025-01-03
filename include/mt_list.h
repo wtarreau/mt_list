@@ -1092,7 +1092,11 @@ static MT_INLINE struct mt_list *_mt_list_lock_prev(struct mt_list *el)
 		/* post loop cleanup:						\
 		 * gets executed only once to perform cleanup			\
 		 * after child loop has finished, or a break happened		\
+		 * Let's help gcc know that back.prev cannot be null after a	\
+		 * first pass.							\
 		 */								\
+		if (item == NULL && back.prev == NULL)				\
+			MT_UNREACHABLE();					\
 		if (item != NULL) {						\
 			/* last visited item still exists or is the list's head	\
 			 * so we have to unlock it. back.prev may be null if 	\
@@ -1108,7 +1112,6 @@ static MT_INLINE struct mt_list *_mt_list_lock_prev(struct mt_list *el)
 			 * Note that gcc may believe that back.prev may be null \
 			 * which is not possible by construction.		\
 			 */							\
-			MT_ALREADY_CHECKED(back.prev);				\
 			mt_list_unlock_link(back);				\
 		}								\
 	     })									\
@@ -1176,7 +1179,11 @@ static MT_INLINE struct mt_list *_mt_list_lock_prev(struct mt_list *el)
 		/* post loop cleanup:						\
 		 * gets executed only once to perform cleanup			\
 		 * after child loop has finished, or a break happened		\
+		 * Let's help gcc know that back.prev cannot be null after a	\
+		 * first pass.							\
 		 */								\
+		if (item == NULL && back.prev == NULL)				\
+			MT_UNREACHABLE();					\
 		if (item != NULL) {						\
 			/* last visited item still exists or is the list's head	\
 			 * so we have to unlock it. back.prev may be null if 	\
@@ -1195,7 +1202,6 @@ static MT_INLINE struct mt_list *_mt_list_lock_prev(struct mt_list *el)
 			 * Note that gcc may believe that back.prev may be null \
 			 * which is not possible by construction.		\
 			 */							\
-			MT_ALREADY_CHECKED(back.prev);				\
 			mt_list_unlock_link(back);				\
 		}								\
 	     })									\

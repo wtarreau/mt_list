@@ -65,6 +65,15 @@
 #define __atomic_thread_fence(order) do { } while (0)
 #endif
 
+/* When __builtin_unreachable() is available, we can tell the compiler that
+ * certain code paths are not expected to be followed.
+ */
+#if defined(__clang__) || (defined(__GNUC__) && (__GNUC__ >= 5 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 5)))
+#define MT_UNREACHABLE() __builtin_unreachable()
+#else
+#define MT_UNREACHABLE() do { } while (0)
+#endif
+
 /* set NOINLINE to forcefully disable user functions inlining */
 #if defined(NOINLINE)
 #define MT_INLINE __attribute__((noinline))

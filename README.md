@@ -1,4 +1,4 @@
-MT_LIST: multi-thread aware doubly-linked lists
+# MT_LIST: multi-thread aware doubly-linked lists
 
 Abstract
 --------
@@ -11,19 +11,19 @@ Principles
 ----------
 
 The lists are designed to minimize contention in environments where elements
-may be concurrently manipulated at different locations. The principle is to
-act on the links between the elements instead of the elements themselves. This
-is achieved by temporarily "cutting" these links, which effectively consists in
+may be concurrently manipulated at different locations. The principle is to act
+on the links between the elements instead of the elements themselves. This is
+achieved by temporarily "cutting" these links, which effectively consists in
 replacing the ends of the links with special pointers serving as a lock, called
-MT_LIST_BUSY. An element is considered locked when both its next and prev
-pointers are equal to this MT_LIST_BUSY pointer. A link is locked when both of
-its ends are equal to this MT_LIST_BUSY pointer, i.e. the next pointer of the
-element at the source of the link and the prev pointer of the element the link
-points to. It's worth noting that a locked link by definition no longer exists
-since neither end knows where it was pointing to, unless a backup of it was
-made prior to locking it.
+`MT_LIST_BUSY`. An element is considered locked when both its *next* and *prev*
+pointers are equal to this `MT_LIST_BUSY` pointer. A link is locked when both
+of its ends are equal to this `MT_LIST_BUSY` pointer, i.e. the *next* pointer
+of the element at the source of the link and the *prev* pointer of the element
+the link points to. It's worth noting that a locked link by definition no
+longer exists since neither end knows where it was pointing to, unless a backup
+of it was made prior to locking it.
 
-The next and prev pointers are replaced by the list manipulation functions
+The *next* and *prev* pointers are replaced by the list manipulation functions
 using atomic exchange. This means that the caller knows if the element it tries
 to replace was already locked or if it owns it. In order to replace a link,
 both ends of the link must be owned by the thread willing to replace it.
@@ -41,7 +41,7 @@ Removing an element always consists in owning the two links surrounding it,
 hence owning the 4 pointers.
 
 Scanning the list consists in locking the element to (re)start from, locking
-the link used to jump to the next element, then locking that element and
+the link used to jump to the *next* element, then locking that element and
 unlocking the previous one. All types of concurrency issues are supported
 there, including elements disappearing while trying to lock them. It is
 perfectly possible to have multiple threads scan the same list at the same
@@ -75,19 +75,21 @@ it is possible to prevent the compiler from inlining all the functions that
 may loop. As a rule of thumb, operations which only exist as macros do modify
 one or more of their arguments.
 
-All exposed functions are called "mt_list_something()", all exposed macros are
-called "MT_LIST_SOMETHING()", possibly mapping 1-to-1 to the equivalent
-function, and the list element type is called "mt_list".
+All exposed functions are called `mt_list_something()`, all exposed macros are
+called `MT_LIST_SOMETHING()`, possibly mapping 1-to-1 to the equivalent
+function, and the list element type is called **mt_list**.
 
 
 Operations
 ----------
 
-mt_list_append(el1, el2)
-    Adds el2 before el1, which means that if el1 is the list's head, el2 will
-    effectively be appended to the end of the list.
+* **`mt_list_append(el1, el2)`**
 
-  before:
+    Adds `el2` before `el1`, which means that if `el1` is the list's head,
+    `el2` will effectively be appended to the end of the list.
+
+    > before:
+    ```
                                                               +---+
                                                               |el2|
                                                               +---+
@@ -96,21 +98,26 @@ mt_list_append(el1, el2)
     #=>|el1|<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+     +---+
     #=>|el1|<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<===>|el2|<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+     +---+  #
     #=====================================================================#
+    ```
 
+* **`mt_list_try_append(el1, el2)`**
 
-mt_list_try_append(el1, el2)
-    Tries to add el2 before el1, which means that if el1 is the list's head,
-    el2 will effectively be appended to the end of the list. el2 will only be
-    added if it's deleted (loops over itself). The operation will return zero if
-    this is not the case (el2 is not empty anymore) or non-zero on success.
+    Tries to add `el2` before `el1`, which means that if `el1` is the list's
+    head, `el2` will effectively be appended to the end of the list. `el2` will
+    only be added if it's deleted (loops over itself). The operation will
+    return zero if this is not the case (el2 is not empty anymore) or non-zero
+    on success.
 
-  before:
+    > before:
+    ```
                                                            #=========#
                                                            #  +---+  #
                                                            #=>|el2|<=#
@@ -120,19 +127,23 @@ mt_list_try_append(el1, el2)
     #=>|el1|<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+     +---+
     #=>|el1|<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<===>|el2|<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+     +---+  #
     #=====================================================================#
+    ```
 
+* **`mt_list_insert(el1, el2)`**
 
-mt_list_insert(el1, el2)
-    Adds el2 after el1, which means that if el1 is the list's head, el2 will
-    effectively be insert at the beginning of the list.
+    Adds `el2` after `el1`, which means that if `el1` is the list's head, `el2`
+    will effectively be insert at the beginning of the list.
 
-  before:
+    > before:
+    ```
             +---+
             |el2|
             +---+
@@ -141,21 +152,27 @@ mt_list_insert(el1, el2)
     #=>|el1|<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+     +---+
     #=>|el1|<===>|el2|<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+     +---+  #
     #=====================================================================#
+    ```
 
 
-mt_list_try_insert(el1, el2)
-    Tries to add el2 after el1, which means that if el1 is the list's head,
-    el2 will effectively be inserted at the beginning of the list. el2 will only
-    be added if it's deleted (loops over itself). The operation will return zero
-    if this is not the case (el2 is not empty anymore) or non-zero on success.
+* **`mt_list_try_insert(el1, el2)`**
 
-  before:
+    Tries to add `el2` after `el1`, which means that if `el1` is the list's
+    head, `el2` will effectively be inserted at the beginning of the list.
+    `el2` will only be added if it's deleted (loops over itself). The operation
+    will return zero if this is not the case (`el2` is not empty anymore) or
+    non-zero on success.
+
+    > before:
+    ```
          #=========#
          #  +---+  #
          #=>|el2|<=#
@@ -165,26 +182,33 @@ mt_list_try_insert(el1, el2)
     #=>|el1|<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+     +---+
     #=>|el1|<===>|el2|<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+     +---+  #
     #=====================================================================#
+    ```
 
 
-mt_list_delete(el1)
-    Removes el1 from the list, and marks it as deleted, wherever it is. If
+* **`mt_list_delete(el1)`**
+
+    Removes `el1` from the list, and marks it as deleted, wherever it is. If
     the element was already not part of a list anymore, 0 is returned,
     otherwise non-zero is returned if the operation could be performed.
 
-  before:
+    > before:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+     +---+
     #=>| A |<===>|el1|<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+     +---+  #
     #=====================================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>| A |<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
@@ -194,46 +218,57 @@ mt_list_delete(el1)
     #=>|el1|<=#
     #  +---+  #
     #=========#
+    ```
 
 
-mt_list_behead(l)
+* **`mt_list_behead(l)`**
+
     Detaches a list of elements from its head with the aim of reusing them to
     do anything else. The head will be turned to an empty list, and the list
-    will be partially looped: the first element's prev will point to the last
-    one, and the last element's next will be NULL. The pointer to the first
-    element is returned, or NULL if the list was empty. This is essentially
+    will be partially looped: the first element's *prev* will point to the last
+    one, and the last element's *next* will be `NULL`. The pointer to the first
+    element is returned, or `NULL` if the list was empty. This is essentially
     used when recycling lists of unused elements, or to grab a lot of elements
     at once for local processing. It is safe to be run concurrently with the
     insert/append operations performed at the list's head, but not against
     modifications performed at any other place, such as delete operation.
 
-  before:
+    > before:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+     +---+
     #=>| L |<===>| A |<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+     +---+  #
     #=====================================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+         +---+     +---+     +---+     +---+     +---+     +---+
     #=>| L |<=#   ,--| A |<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<-.
     #  +---+  #   |  +---+     +---+     +---+     +---+     +---+     +---+  |
     #=========#   `-----------------------------------------------------------'
+    ```
 
 
-mt_list_pop(l)
-    Removes the list's first element, returns it deleted. If the list was empty,
-    NULL is returned. When combined with mt_list_append() this can be used to
-    implement MPMC queues for example. A macro MT_LIST_POP() is provided for a
-    more convenient use; instead of returning the list element, it will return
-    the structure holding the element, taking care of preserving the NULL.
+* **`mt_list_pop(l)`**
 
-  before:
+    Removes the list's first element, returns it deleted. If the list was
+    empty, `NULL` is returned. When combined with `mt_list_append()` this can
+    be used to implement MPMC queues for example. A macro `MT_LIST_POP()` is
+    provided for a more convenient use; instead of returning the list element,
+    it will return the structure holding the element, taking care of preserving
+    the `NULL`.
+
+    > before:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+     +---+
     #=>| L |<===>| A |<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+     +---+  #
     #=====================================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>| L |<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
@@ -243,173 +278,215 @@ mt_list_pop(l)
     #=>| A |<=#
     #  +---+  #
     #=========#
+    ```
 
 
-_mt_list_lock_next(elt)
-    Locks the link that starts at the next pointer of the designated element.
+* **`_mt_list_lock_next(elt)`**
+
+    Locks the link that starts at the *next* pointer of the designated element.
     The link is replaced by two locked pointers, and a pointer to the next
     element is returned. The link must then be unlocked using
-    _mt_list_unlock_next() passing it this pointer, or mt_list_unlock_link().
-    This function is not intended to be used by applications, and makes certain
-    assumptions about the state of the list pertaining to its use in iterators.
+    `_mt_list_unlock_next()` passing it this pointer, or
+    `mt_list_unlock_link()`.  This function is not intended to be used by
+    applications, and makes certain assumptions about the state of the list
+    pertaining to its use in iterators.
 
-  before:
+    > before:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>|elt|<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>|elt|x   x| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
 
-  Return
-  value:    &B
+    Return
+    value:    &B
+    ```
 
 
-_mt_list_unlock_next(elt, back)
-    Unlocks the link that starts at the next pointer of the designated element
-    and is supposed to end at <back>. This function is not intended to be used
+* **`_mt_list_unlock_next(elt, back)`**
+
+    Unlocks the link that starts at the *next* pointer of the designated element
+    and is supposed to end at `back`. This function is not intended to be used
     by applications, and makes certain assumptions about the state of the list
     pertaining to its use in iterators.
 
-  before:       back
+    > before:
+    ```
+                back
                   \
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>|elt|x   x| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>|elt|<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
 
-_mt_list_lock_prev(elt)
-    Locks the link that starts at the prev pointer of the designated element.
-    The link is replaced by two locked pointers, and a pointer to the prev
+* **`_mt_list_lock_prev(elt)`**
+
+    Locks the link that starts at the *prev* pointer of the designated element.
+    The link is replaced by two locked pointers, and a pointer to the previous
     element is returned. The link must then be unlocked using
-    _mt_list_unlock_prev() passing it this pointer, or mt_list_unlock_link().
-    This function is not intended to be used by applications, and makes certain
-    assumptions about the state of the list pertaining to its use in iterators.
+    `_mt_list_unlock_prev()` passing it this pointer, or
+    `mt_list_unlock_link()`.  This function is not intended to be used by
+    applications, and makes certain assumptions about the state of the list
+    pertaining to its use in iterators.
 
-  before:
+    > before:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>| A |<===>|elt|<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>| A |x   x|elt|<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
 
-  Return
-  value:    &A
+    Return
+    value:    &A
+    ```
 
 
-_mt_list_unlock_prev(elt, back)
-    Unlocks the link that starts at the prev pointer of the designated element
-    and is supposed to end at <back>. This function is not intended to be used
+* **`_mt_list_unlock_prev(elt, back)`**
+
+    Unlocks the link that starts at the *prev* pointer of the designated element
+    and is supposed to end at `back`. This function is not intended to be used
     by applications, and makes certain assumptions about the state of the list
     pertaining to its use in iterators.
 
-  before:   back
-           /
+    > before:
+    ```
+         back
+          /
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>| A |x   x|elt|<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>| A |<===>|elt|<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
 
-mt_list_lock_next(elt)
+* **`mt_list_lock_next(elt)`**
+
     Cuts the list after the specified element. The link is replaced by two
-    locked pointers, and is returned as a list element. The list must then
-    be unlocked using mt_list_unlock_link() or mt_list_unlock_full() applied
+    locked pointers, and is returned as a list element. The list must then be
+    unlocked using `mt_list_unlock_link()` or `mt_list_unlock_full()` applied
     to the returned list element.
 
-  before:
+    > before:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>|elt|<===>| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>|elt|x   x| B |<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
 
-  Return   elt  B
-  value:    <===>
+    Return   elt  B
+    value:    <===>
+    ```
 
 
-mt_list_lock_prev(elt)
+* **`mt_list_lock_prev(elt)`**
+
     Cuts the list before the specified element. The link is replaced by two
-    locked pointers, and is returned as a list element. The list must then
-    be unlocked using mt_list_unlock_link() or mt_list_unlock_full() applied
+    locked pointers, and is returned as a list element. The list must then be
+    unlocked using `mt_list_unlock_link()` or `mt_list_unlock_full()` applied
     to the returned list element.
 
-  before:
+    > before:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>| A |<===>|elt|<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>| A |x   x|elt|<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
 
-  Return    A  elt
-  value:    <===>
+    Return    A  elt
+    value:    <===>
+    ```
 
 
-mt_list_lock_elem(elt)
+* **`mt_list_lock_elem(elt)`**
+
     Locks the element only. Both of its pointers are replaced by two locked
     pointers, and the previous ones are returned as a list element. It's not
     possible to remove such an element from a list since neighbors are not
     locked. The sole purpose of this operation is to prevent another thread
     from visiting this element during an operation. The element must then be
-    unlocked using mt_list_unlock_elem() applied to the returned element.
+    unlocked using `mt_list_unlock_elem()` applied to the returned element.
 
-  before:
+    > before:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>| A |<===>|elt|<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>| A |=>  x|elt|x  <=| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
 
-  Return    A   C
-  value:    <===>
+    Return    A   C
+    value:    <===>
+    ```
 
 
-mt_list_unlock_elem(elt, ends)
-    Unlocks the element only by restoring its backed up contents from <ends>,
-    as returned by a previous call to mt_list_lock_elem(elt). The ends of the
+* **`mt_list_unlock_elem(elt, ends)`**
+
+    Unlocks the element only by restoring its backed up contents from `ends`,
+    as returned by a previous call to `mt_list_lock_elem(elt)`. The ends of the
     links are not affected, only the element is touched. This is intended to
-    terminate a critical section started by a call to mt_list_lock_elem(). It
-    may also be used on a fully locked element processed by mt_list_lock_full()
-    in which case it will leave the list still locked.
+    terminate a critical section started by a call to `mt_list_lock_elem()`. It
+    may also be used on a fully locked element processed by
+    `mt_list_lock_full()` in which case it will leave the list still locked.
 
-  before:
+    > before:
+    ```
             A   C
       ends: <===>
 
@@ -417,14 +494,18 @@ mt_list_unlock_elem(elt, ends)
     #=>| A |=>  x|elt|x  <=| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>| A |<===>|elt|<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
-  before:
+    > before:
+    ```
             A   C
       ends: <===>
 
@@ -432,15 +513,19 @@ mt_list_unlock_elem(elt, ends)
     #=>| A |x   x|elt|x   x| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>| A |x  <=|elt|=>  x| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
 
-mt_list_unlock_self(elt)
+* **`mt_list_unlock_self(elt)`**
+
     Unlocks the element only by resetting it (i.e. making it loop over itself).
     This is useful in the locked variant of iterators when the element is to be
     removed from the list and first needs to be unlocked because it's shared
@@ -450,54 +535,65 @@ mt_list_unlock_self(elt)
     normally only used from within locked iterators, which perform a full lock
     (both links are locked).
 
-  before:
+    > before:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>| A |x   x|elt|x   x| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+         +---+     +---+     +---+     +---+     +---+
     #=>|elt|<=#   #=>| A |x   x| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+  #   #  +---+     +---+     +---+     +---+     +---+  #
     #=========#   #=================================================#
+    ```
 
 
-mt_list_lock_full(elt)
+* **`mt_list_lock_full(elt)`**
+
     Locks both the element and its surrounding links. The extremities of the
     previous links are returned as a single list element (which corresponds to
     the element's before locking). The list must then be unlocked using
-    mt_list_unlock_full() to reconnect the element to the list and unlock
-    both, or mt_list_unlock_link() to effectively remove the element.
+    `mt_list_unlock_full()` to reconnect the element to the list and unlock
+    both, or `mt_list_unlock_link()` to effectively remove the element.
 
-  before:
+    > before:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>| A |<===>|elt|<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>| A |x   x|elt|x   x| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
 
-  Return    A             C
-  value:    <=============>
+    Return    A             C
+    value:    <=============>
+    ```
 
 
-mt_list_unlock_link(ends)
+* **`mt_list_unlock_link(ends)`**
+
     Connects two ends in a list together, effectively unlocking the list if it
-    was locked. It takes a list head which contains a pointer to the prev and
-    next elements to connect together. It normally is a copy of a previous link
-    returned by functions such as mt_list_lock_next(), mt_list_lock_prev(), or
-    mt_list_lock_full(). If applied after mt_list_lock_full(), it will result
-    in the list being reconnected without the element, which remains locked,
-    effectively deleting it. Note that this is not meant to be used from within
-    iterators, as the iterator will automatically and safely reconnect ends
-    after each iteration.
+    was locked. It takes a list head which contains a pointer to the *prev* and
+    *next* elements to connect together. It normally is a copy of a previous
+    link returned by functions such as `mt_list_lock_next()`,
+    `mt_list_lock_prev()`, or `mt_list_lock_full()`. If applied after
+    `mt_list_lock_full()`, it will result in the list being reconnected without
+    the element, which remains locked, effectively deleting it. Note that this
+    is not meant to be used from within iterators, as the iterator will
+    automatically and safely reconnect ends after each iteration.
 
-  before:
+    > before:
+    ```
             A   C
       Ends: <===>
 
@@ -505,26 +601,31 @@ mt_list_unlock_link(ends)
     #=>| A |x   x| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+  #
     #=================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+     +---+     +---+     +---+     +---+
     #=>| A |<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+  #
     #=================================================#
+    ```
 
 
-mt_list_unlock_full(elt, ends)
+* **`mt_list_unlock_full(elt, ends)`**
+
     Connects the specified element to the elements pointed to by the specified
-    <ends>, which is a backup copy of the previous list member of the element
-    prior to locking it using mt_list_lock_full() or mt_list_lock_elem(). This
-    is normally used to unlock an element and a list, but may also be used to
-    manually insert an element into an opened list (which should still be
-    locked). The element's list member is technically assigned a copy of <ends>
-    and both sides point to the element. This must not be used inside an
-    iterator as it would also unlock the list itself and make the loop visit
-    nodes in an unknown state.
+    `ends`, which is a backup copy of the previous list member of the element
+    prior to locking it using `mt_list_lock_full()` or
+    `mt_list_lock_elem()`. This is normally used to unlock an element and a
+    list, but may also be used to manually insert an element into an opened
+    list (which should still be locked). The element's list member is
+    technically assigned a copy of `ends` and both sides point to the
+    element. This must not be used inside an iterator as it would also unlock
+    the list itself and make the loop visit nodes in an unknown state.
 
-  before:
+    > before:
+    ```
                  +---+
      elt:       x|elt|x
                  +---+
@@ -535,18 +636,22 @@ mt_list_unlock_full(elt, ends)
     #=>| A |x             x| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+               +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
-  after:
+    > after:
+    ```
        +---+     +---+     +---+     +---+     +---+     +---+
     #=>| A |<===>|elt|<===>| C |<===>| D |<===>| E |<===>| F |<=#
     #  +---+     +---+     +---+     +---+     +---+     +---+  #
     #===========================================================#
+    ```
 
 
-MT_LIST_FOR_EACH_ENTRY_LOCKED(item, list_head, member, back)
-    Iterates <item> through a list of items of type "typeof(*item)" which are
-    linked via a "struct mt_list" member named <member>. A pointer to the head
-    of the list is passed in <list_head>. <back> is a temporary struct mt_list,
+* **`MT_LIST_FOR_EACH_ENTRY_LOCKED(item, list_head, member, back)`**
+
+    Iterates `item` through a list of items of type `typeof(*item)` which are
+    linked via a `struct mt_list` member named `member`. A pointer to the head
+    of the list is passed in `list_head`. `back` is a temporary struct mt_list,
     used internally. It contains a copy of the contents of the current item's
     list member before locking it. This macro is implemented using two nested
     loops, each defined as a separate macro for easier inspection. The inner
@@ -558,14 +663,15 @@ MT_LIST_FOR_EACH_ENTRY_LOCKED(item, list_head, member, back)
     lead to undefined behavior. During the scan of the list, the item has both
     of its links locked, so concurrent operations on the list are safe. However
     the thread holding the list locked must be careful not to perform other
-    locking operations. In order to remove the current element, setting <item>
-    to NULL is sufficient to make the inner loop not try to re-attach it. It is
+    locking operations. In order to remove the current element, setting `item`
+    to `NULL` is sufficient to make the inner loop not try to re-attach it. It is
     recommended to reinitialize it though if it is expected to be reused, so as
     not to leave its pointers locked. Same if other threads are trying to
     concurrently operate on the element.
 
     From within the loop, the list looks like this:
 
+    ```
         MT_LIST_FOR_EACH_ENTRY_LOCKED(item, lh, list, back) {
             //                    A             C
             //           back:    <=============>
@@ -575,6 +681,7 @@ MT_LIST_FOR_EACH_ENTRY_LOCKED(item, list_head, member, back)
             //  #  +---+     +---+     +---+     +---+     +---+     +---+  #
             //  #===========================================================#
         }
+    ```
 
     This means that only the current item as well as its two neighbors are
     locked. It is thus possible to act on any other part of the list in
@@ -584,33 +691,35 @@ MT_LIST_FOR_EACH_ENTRY_LOCKED(item, list_head, member, back)
     down the progress.
 
 
-MT_LIST_FOR_EACH_ENTRY_UNLOCKED(item, list_head, member, back)
-    Iterates <item> through a list of items of type "typeof(*item)" which are
-    linked via a "struct mt_list" member named <member>. A pointer to the head
-    of the list is passed in <list_head>. <back> is a temporary struct mt_list,
-    used internally. It contains a copy of the contents of the current item's
-    list member before resetting it. This macro is implemented using two nested
-    loops, each defined as a separate macro for easier inspection. The inner
-    loop will run for each element in the list, and the outer loop will run
-    only once to do some cleanup and unlocking when the end of the list is
-    reached or user breaks from inner loop. It is safe to break from this macro
-    as the cleanup will be performed anyway, but it is strictly forbidden to
-    branch (goto or return) from the loop because skipping the cleanup will
-    lead to undefined behavior. During the scan of the list, the item has both
-    of its neighbours locked, with both of its ends pointing to itself. Thus,
-    concurrent walks on the list are safe, but not direct accesses to the
-    element. In order to remove the current element, setting <item> to NULL is
-    sufficient to make the inner loop not try to re-attach it. There is no need
-    to reinitialize it since it is already done. If the element is left, it will
-    be re-attached to the list. This version is meant as a more user-friendly
-    method to walk over a list in which it is known by design that elements are
-    not directly accessed (e.g. a pure MPMC queue). The typical pattern which
-    corresponds to this case is when the first operation in the iterator's body
-    is a call to unlock the iterator, which is then no longer needed (though
-    harmless).
+* **`MT_LIST_FOR_EACH_ENTRY_UNLOCKED(item, list_head, member, back)`**
+
+    Iterates `item` through a list of items of type `typeof(*item)` which are
+    linked via a `struct mt_list` member named `member`. A pointer to the head
+    of the list is passed in `list_head`. `back` is a temporary `struct
+    mt_list`, used internally. It contains a copy of the contents of the
+    current item's list member before resetting it. This macro is implemented
+    using two nested loops, each defined as a separate macro for easier
+    inspection. The inner loop will run for each element in the list, and the
+    outer loop will run only once to do some cleanup and unlocking when the end
+    of the list is reached or user breaks from inner loop. It is safe to break
+    from this macro as the cleanup will be performed anyway, but it is strictly
+    forbidden to branch (goto or return) from the loop because skipping the
+    cleanup will lead to undefined behavior. During the scan of the list, the
+    item has both of its neighbours locked, with both of its ends pointing to
+    itself. Thus, concurrent walks on the list are safe, but not direct
+    accesses to the element. In order to remove the current element, setting
+    `item` to `NULL` is sufficient to make the inner loop not try to re-attach
+    it. There is no need to reinitialize it since it is already done. If the
+    element is left, it will be re-attached to the list. This version is meant
+    as a more user-friendly method to walk over a list in which it is known by
+    design that elements are not directly accessed (e.g. a pure MPMC
+    queue). The typical pattern which corresponds to this case is when the
+    first operation in the iterator's body is a call to unlock the iterator,
+    which is then no longer needed (though harmless).
 
     From within the loop, the list looks like this:
 
+    ```
         MT_LIST_FOR_EACH_ENTRY_UNLOCKED(item, lh, list, back) {
             //                          back: A   C
             //  item->list                    <===>
@@ -619,6 +728,7 @@ MT_LIST_FOR_EACH_ENTRY_UNLOCKED(item, list_head, member, back)
             //  # +---+ #   #  +---+     +---+     +---+     +---+     +---+  #
             //  #=======#   #=================================================#
         }
+    ```
 
     This means that only the current item's neighbors are locked. It is thus
     possible to act on any other part of the list in parallel (other threads
@@ -635,6 +745,7 @@ The example below collects up to 50 jobs from a shared list that are compatible
 with the current thread, and moves them to a local list for later processing.
 The same pointers are used for both lists and placed in an anonymous union.
 
+```
    struct job {
       union {
          struct list list;
@@ -666,3 +777,4 @@ The same pointers are used for both lists and placed in an anonymous union.
    LIST_FOR_EACH(item, &local_job_queue, list) {
        ...
    }
+```

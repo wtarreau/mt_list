@@ -65,6 +65,15 @@
 #define __atomic_thread_fence(order) do { } while (0)
 #endif
 
+/* offsetof() is provided as a builtin starting with gcc-4.1 */
+#ifndef offsetof
+# if (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 1))
+#  define offsetof(type, field)  __builtin_offsetof(type, field)
+# else
+#  define offsetof(type, field) ((__size_t)(__uintptr_t)((const volatile void *)&((type *)0)->field))
+# endif
+#endif
+
 /* When __builtin_unreachable() is available, we can tell the compiler that
  * certain code paths are not expected to be followed.
  */
